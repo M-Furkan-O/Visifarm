@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Models ve veriler (büyük dosyalar)
+models/*.bin
+models/*.pt
+models/*.pth
+data/*.json
+data/*.txt
+data/*.csv
+
+# Environment
+.env
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
