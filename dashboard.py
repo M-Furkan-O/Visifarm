@@ -1,6 +1,7 @@
 import sys
 import shutil
 from pathlib import Path
+from serial_reader import SerialReader
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QMessageBox, QListWidget, 
                              QListWidgetItem, QComboBox, QGroupBox, QGridLayout, QTextEdit,
@@ -457,6 +458,29 @@ class Dashboard(QMainWindow):
             notes_text.setWordWrap(True)
             notes_text.setStyleSheet("background-color: #fafafa; color: black; padding: 10px; border-radius: 5px;")
             self.detail_layout.addWidget(notes_text)
+        
+        photos_btn = QPushButton("Fotoğraflar")
+        photos_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #8e44ad;
+                color: white;
+                padding: 10px;
+                border: none;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #7d3c98; }
+        """)
+        photos_btn.clicked.connect(lambda: self.open_photo_dialog(animal))
+        self.detail_layout.addSpacing(10)
+        self.detail_layout.addWidget(photos_btn)
+        
+        self.detail_layout.addStretch()
+    
+    def open_photo_dialog(self, animal: Animal):
+        """Seçili hayvan için fotoğraf yöneticisini aç."""
+        dialog = PhotoDialog(self, animal)
+        dialog.exec_()
     
     def add_animal(self):
         """Yeni hayvan ekle"""
@@ -536,9 +560,173 @@ class Dashboard(QMainWindow):
                 self.on_logout()
     
     def run(self):
-        self.show()     
+        self.show()
+
+
+class PhotoDialog(QDialog):
+    """Seçili hayvanın fotoğraflarını yönetmek için pencere."""
+    
+    def __init__(self, parent, animal: Animal):
+        super().__init__(parent)
+        self.animal = animal
+        self.setWindowTitle(f"{animal.isim} - Fotoğraflar")
+        self.setMinimumSize(800, 600)
+        
+        self.photos_root = Path("data/photos")
+        self.animal_dir = self.photos_root / (animal.id or "unknown")
+        self.animal_dir.mkdir(parents=True, exist_ok=True)
+        
+        self.photos_by_date = {}
+        self._init_ui()
+        self.load_photos()
+    
+    def _init_ui(self):
+        main_layout = QHBoxLayout()
+        self.setLayout(main_layout)
+        
+        # Tarih listesi
+        left_layout = QVBoxLayout()
+        dates_label = QLabel("Tarihler")
+        dates_label.setFont(QFont("Arial", 12, QFont.Bold))
+        left_layout.addWidget(dates_label)
+        
+        self.date_list = QListWidget()
+        self.date_list.itemClicked.connect(self.on_date_selected)
+        left_layout.addWidget(self.date_list, 1)
+        main_layout.addLayout(left_layout, 1)
+        
+        # Sağ panel (ekle ve görüntüle)
+        right_layout = QVBoxLayout()
+        
+        control_layout = QHBoxLayout()
+        self.date_input = QDateEdit(QDate.currentDate())
+        self.date_input.setDisplayFormat("dd.MM.yyyy")
+        self.date_input.setCalendarPopup(True)
+        control_layout.addWidget(QLabel("Tarih:"))
+        control_layout.addWidget(self.date_input)
+        
+        add_btn = QPushButton("Fotoğraf Ekle")
+        add_btn.clicked.connect(self.add_photo)
+        add_btn.setStyleSheet("""
+            QPushButton { background-color: #27ae60; color: white; padding: 8px 12px;
+                           border: none; border-radius: 4px; font-weight: bold; }
+            QPushButton:hover { background-color: #229954; }
+        """)
+        control_layout.addWidget(add_btn)
+        right_layout.addLayout(control_layout)
+        
+        self.photos_scroll = QScrollArea()
+        self.photos_scroll.setWidgetResizable(True)
+        self.photo_container = QWidget()
+        self.photo_layout = QVBoxLayout()
+        self.photo_layout.setAlignment(Qt.AlignTop)
+        self.photo_container.setLayout(self.photo_layout)
+        self.photos_scroll.setWidget(self.photo_container)
+        right_layout.addWidget(self.photos_scroll, 1)
+        
+        main_layout.addLayout(right_layout, 2)
+    
+    def load_photos(self):
+        """Klasörden fotoğrafları oku ve tarihe göre grupla."""
+        self.photos_by_date = {}
+        if not self.animal_dir.exists():
+            self.animal_dir.mkdir(parents=True, exist_ok=True)
+        
+        for img_path in self.animal_dir.iterdir():
+            if not img_path.is_file():
+                continue
+            date_iso = self._extract_date(img_path.name)
+            self.photos_by_date.setdefault(date_iso, []).append(img_path)
+        
+        for paths in self.photos_by_date.values():
+            paths.sort()
+        
+        self._populate_dates()
+    
+    def _extract_date(self, filename: str) -> str:
+        """Dosya adından ISO tarih çıkar (yyyy-MM-dd), yoksa bugünün tarihi."""
+        if len(filename) >= 10:
+            prefix = filename[:10]
+            if QDate.fromString(prefix, "yyyy-MM-dd").isValid():
+                return prefix
+        return QDate.currentDate().toString("yyyy-MM-dd")
+    
+    def _populate_dates(self):
+        self.date_list.clear()
+        for date_iso in sorted(self.photos_by_date.keys()):
+            item = QListWidgetItem(QDate.fromString(date_iso, "yyyy-MM-dd").toString("dd.MM.yyyy"))
+            item.setData(Qt.UserRole, date_iso)
+            self.date_list.addItem(item)
+        
+        if self.date_list.count() > 0:
+            self.date_list.setCurrentRow(self.date_list.count() - 1)
+            self.show_photos_for(self.date_list.currentItem().data(Qt.UserRole))
+        else:
+            self.show_photos_for(None)
+    
+    def on_date_selected(self, item: QListWidgetItem):
+        date_iso = item.data(Qt.UserRole)
+        self.show_photos_for(date_iso)
+    
+    def show_photos_for(self, date_iso: str):
+        """Seçili tarihe ait fotoğrafları ekrana bas."""
+        while self.photo_layout.count():
+            child = self.photo_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        
+        if not date_iso or date_iso not in self.photos_by_date:
+            empty_label = QLabel("Bu tarihte fotoğraf yok.")
+            empty_label.setAlignment(Qt.AlignCenter)
+            self.photo_layout.addWidget(empty_label)
+            return
+        
+        for img_path in self.photos_by_date[date_iso]:
+            img_label = QLabel()
+            pixmap = QPixmap(str(img_path))
+            if not pixmap.isNull():
+                img_label.setPixmap(pixmap.scaledToWidth(350, Qt.SmoothTransformation))
+            else:
+                img_label.setText(f"Görüntülenemedi: {img_path.name}")
+            img_label.setStyleSheet("padding: 8px;")
+            self.photo_layout.addWidget(img_label)
+    
+    def add_photo(self):
+        """Yeni fotoğraf ekle ve dosyayı ilgili klasöre kopyala."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Fotoğraf Seç",
+            "",
+            "Resimler (*.png *.jpg *.jpeg *.bmp *.gif)"
+        )
+        if not file_path:
+            return
+        
+        date_iso = self.date_input.date().toString("yyyy-MM-dd")
+        src_path = Path(file_path)
+        dest_name = f"{date_iso}_{src_path.name}"
+        dest_path = self.animal_dir / dest_name
+        
+        counter = 1
+        while dest_path.exists():
+            dest_path = self.animal_dir / f"{date_iso}_{counter}_{src_path.name}"
+            counter += 1
+        
+        shutil.copy(src_path, dest_path)
+        self.load_photos()
+        self._select_date(date_iso)
+    
+    def _select_date(self, date_iso: str):
+        for i in range(self.date_list.count()):
+            item = self.date_list.item(i)
+            if item.data(Qt.UserRole) == date_iso:
+                self.date_list.setCurrentRow(i)
+                self.show_photos_for(date_iso)
+                break
+
+
 class AnimalDialog(QDialog):
-    """Hayvan ekleme/düzenleme dialog penceresi"""
+    """Hayvan ekleme/düzenleme dialog penceresi (RFID Entegreli)"""
     
     def __init__(self, parent, title, data=None):
         super().__init__(parent)
@@ -548,10 +736,7 @@ class AnimalDialog(QDialog):
         
         # Pencereyi ortala
         screen = QApplication.primaryScreen().geometry()
-        self.move(
-            (screen.width() - 500) // 2,
-            (screen.height() - 600) // 2
-        )
+        self.move((screen.width() - 500) // 2, (screen.height() - 600) // 2)
         
         self.init_ui(data or {})
     
@@ -559,132 +744,115 @@ class AnimalDialog(QDialog):
         layout = QVBoxLayout()
         self.setLayout(layout)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-        
-        # Ortak stil
-        input_style = """
-            QLineEdit, QComboBox, QTextEdit {
-                color: black;
-                background-color: white;
-                border: 2px solid #ddd;
-                border-radius: 4px;
-                padding: 6px;
-            }
-            QLineEdit:focus, QComboBox:focus, QTextEdit:focus {
-                border: 2px solid #3498db;
-                color: black;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-        """
         
         form_layout = QFormLayout()
+        input_style = "padding: 6px; border: 1px solid #ccc; border-radius: 4px;"
 
-        # RFID Tag
+        # --- RFID BÖLÜMÜ ---
+        rfid_layout = QHBoxLayout()
         self.rfid_entry = QLineEdit()
         self.rfid_entry.setText(data.get("rfid_tag", ""))
         self.rfid_entry.setStyleSheet(input_style)
-        form_layout.addRow("RFID Tag *:", self.rfid_entry)
+        self.rfid_entry.setPlaceholderText("Çip ID bekleniyor...")
+        rfid_layout.addWidget(self.rfid_entry)
         
-        # İsim
+        self.scan_btn = QPushButton("Çip Oku")
+        self.scan_btn.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 5px;")
+        self.scan_btn.clicked.connect(self.start_rfid_scan)
+        rfid_layout.addWidget(self.scan_btn)
+        
+        form_layout.addRow("RFID Tag *:", rfid_layout)
+        # -------------------
+        
+        # Diğer Alanlar
         self.isim_entry = QLineEdit()
         self.isim_entry.setText(data.get("isim", ""))
         self.isim_entry.setStyleSheet(input_style)
         form_layout.addRow("İsim *:", self.isim_entry)
         
-        # Tür
         self.tur_combo = QComboBox()
         self.tur_combo.addItems(ANIMAL_TYPES)
         self.tur_combo.setStyleSheet(input_style)
-        if data.get("tur"):
-            index = self.tur_combo.findText(data.get("tur"))
-            if index >= 0:
-                self.tur_combo.setCurrentIndex(index)
+        if data.get("tur"): self.tur_combo.setCurrentText(data.get("tur"))
         form_layout.addRow("Tür *:", self.tur_combo)
         
-        # Yaş - sadece sayı
         self.yas_entry = QLineEdit()
         self.yas_entry.setText(str(data.get("yas", "")))
         self.yas_entry.setStyleSheet(input_style)
-        # Sadece sayı kabul et
-        yas_validator = QRegExpValidator(QRegExp(r'^\d+$'))
-        self.yas_entry.setValidator(yas_validator)
+        self.yas_entry.setValidator(QRegExpValidator(QRegExp(r'^\d+$')))
         form_layout.addRow("Yaş *:", self.yas_entry)
         
-        # Kilo - sadece sayı (ondalıklı)
         self.kilo_entry = QLineEdit()
         self.kilo_entry.setText(str(data.get("kilo", "")))
         self.kilo_entry.setStyleSheet(input_style)
-        # Sadece sayı kabul et (ondalıklı olabilir)
-        kilo_validator = QRegExpValidator(QRegExp(r'^\d+\.?\d*$'))
-        self.kilo_entry.setValidator(kilo_validator)
+        self.kilo_entry.setValidator(QRegExpValidator(QRegExp(r'^\d+\.?\d*$')))
         form_layout.addRow("Kilo (kg) *:", self.kilo_entry)
-        
-        # Boy - sadece sayı (ondalıklı)
+
         self.boy_entry = QLineEdit()
         self.boy_entry.setText(str(data.get("boy", "")))
         self.boy_entry.setStyleSheet(input_style)
-        # Sadece sayı kabul et (ondalıklı olabilir)
-        boy_validator = QRegExpValidator(QRegExp(r'^\d+\.?\d*$'))
-        self.boy_entry.setValidator(boy_validator)
+        self.boy_entry.setValidator(QRegExpValidator(QRegExp(r'^\d+\.?\d*$')))
         form_layout.addRow("Boy (cm) *:", self.boy_entry)
-        
-        # Cinsiyet
+
         self.cinsiyet_combo = QComboBox()
         self.cinsiyet_combo.addItems(GENDERS)
         self.cinsiyet_combo.setStyleSheet(input_style)
-        if data.get("cinsiyet"):
-            index = self.cinsiyet_combo.findText(data.get("cinsiyet"))
-            if index >= 0:
-                self.cinsiyet_combo.setCurrentIndex(index)
+        if data.get("cinsiyet"): self.cinsiyet_combo.setCurrentText(data.get("cinsiyet"))
         form_layout.addRow("Cinsiyet *:", self.cinsiyet_combo)
-        
-        # Renk - sadece harf (sayı kabul etme)
+
         self.renk_entry = QLineEdit()
         self.renk_entry.setText(data.get("renk", ""))
         self.renk_entry.setStyleSheet(input_style)
-        # Sadece harf ve boşluk kabul et (sayı yok)
-        renk_validator = QRegExpValidator(QRegExp(r'^[a-zA-ZğüşıöçĞÜŞİÖÇ\s]+$'))
-        self.renk_entry.setValidator(renk_validator)
         form_layout.addRow("Renk:", self.renk_entry)
-        
-        # Doğum Tarihi - gün.ay.yıl formatı
+
         self.dogum_tarihi_entry = QLineEdit()
         self.dogum_tarihi_entry.setText(data.get("dogum_tarihi", ""))
         self.dogum_tarihi_entry.setStyleSheet(input_style)
-        self.dogum_tarihi_entry.setPlaceholderText("gg.aa.yyyy (örn: 15.03.2020)")
-        # Tarih formatı: gün.ay.yıl (sadece sayı değil, nokta ile ayrılmış)
-        tarih_validator = QRegExpValidator(QRegExp(r'^\d{1,2}\.\d{1,2}\.\d{4}$'))
-        self.dogum_tarihi_entry.setValidator(tarih_validator)
-        form_layout.addRow("Doğum Tarihi (gg.aa.yyyy):", self.dogum_tarihi_entry)
-        
-        # Sağlık Durumu
+        self.dogum_tarihi_entry.setPlaceholderText("gg.aa.yyyy")
+        form_layout.addRow("Doğum Tarihi:", self.dogum_tarihi_entry)
+
         self.saglik_durumu_entry = QLineEdit()
         self.saglik_durumu_entry.setText(data.get("saglik_durumu", "İyi"))
         self.saglik_durumu_entry.setStyleSheet(input_style)
         form_layout.addRow("Sağlık Durumu:", self.saglik_durumu_entry)
         
-        # Notlar
         self.notlar_text = QTextEdit()
         self.notlar_text.setPlainText(data.get("notlar", ""))
-        self.notlar_text.setMaximumHeight(100)
+        self.notlar_text.setMaximumHeight(80)
         self.notlar_text.setStyleSheet(input_style)
         form_layout.addRow("Notlar:", self.notlar_text)
         
         layout.addLayout(form_layout)
-        layout.addStretch()
         
-        # Butonlar
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.Save | QDialogButtonBox.Cancel
-        )
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-    
+
+    # --- RFID FONKSIYONLARI ---
+    def start_rfid_scan(self):
+        self.scan_btn.setText("Okunuyor...")
+        self.scan_btn.setEnabled(False)
+        self.rfid_entry.clear()
+        
+        self.reader_thread = SerialReader()
+        self.reader_thread.rfid_read.connect(self.on_rfid_found)
+        self.reader_thread.error_occurred.connect(self.on_rfid_error)
+        self.reader_thread.start()
+
+    def on_rfid_found(self, rfid_id):
+        self.rfid_entry.setText(rfid_id)
+        self.scan_btn.setText("Tekrar Oku")
+        self.scan_btn.setEnabled(True)
+        QMessageBox.information(self, "Başarılı", f"Kart Okundu: {rfid_id}")
+        self.reader_thread.stop()
+
+    def on_rfid_error(self, msg):
+        self.scan_btn.setText("Çip Oku")
+        self.scan_btn.setEnabled(True)
+        QMessageBox.warning(self, "Hata", msg)
+
     def save(self):
-        """Form verilerini kaydet"""
         data = {
             "rfid_tag": self.rfid_entry.text(),
             "isim": self.isim_entry.text(),
