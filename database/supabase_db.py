@@ -1,4 +1,6 @@
 from typing import List, Optional, Dict, Any
+from datetime import datetime, timedelta
+
 from supabase import create_client, Client
 from pathlib import Path
 from database.base_db import BaseDatabase
@@ -52,7 +54,19 @@ class SupabaseDatabase(BaseDatabase):
             data = self._from_animal(animal)
             # ID Supabase tarafından identity ile üretiliyor, None ise gönderme
             data.pop("id", None)
-            self.client.table(self.table_name).insert(data).execute()
+            # Kayıt ekle ve üretilen ID'yi geri al
+            response = (
+                self.client.table(self.table_name)
+                .insert(data)
+                .select("id")
+                .execute()
+            )
+
+            # Supabase, eklenen satır(lar)ı listede döner
+            if response.data and len(response.data) > 0:
+                generated_id = response.data[0].get("id")
+                if generated_id is not None:
+                    animal.id = str(generated_id)
             return True
         except Exception as e:
             print(f"Hata: {e}")
@@ -102,6 +116,77 @@ class SupabaseDatabase(BaseDatabase):
             print(f"Hata: {e}")
             return []
 
+    # -------- Sağlık geçmişi (kilo + ateş) --------
+
+    def add_health_log(
+        self,
+        animal_id: str,
+        weight: Optional[float],
+        temperature: Optional[float],
+        measured_at: Optional[datetime] = None,
+    ) -> bool:
+        """Belirli bir ölçüm anı için kilo + ateş kaydı ekle."""
+        if not self.client:
+            return False
+
+        if measured_at is None:
+            measured_at = datetime.utcnow()
+
+        try:
+            payload = {
+                "animal_id": animal_id,
+                "measured_at": measured_at.isoformat(),
+                "weight": weight,
+                "temperature": temperature,
+            }
+            self.client.table("health_logs").insert(payload).execute()
+            return True
+        except Exception as e:
+            print(f"Sağlık kaydı eklenirken hata: {e}")
+            return False
+
+    def get_health_logs(self, animal_id: str, days: int = 7) -> List[Dict[str, Any]]:
+        """
+        Belirli bir hayvan için son N günün kilo + ateş kayıtlarını getir.
+
+        Returns:
+            [
+                {"date": datetime, "weight": float | None, "temperature": float | None},
+                ...
+            ]
+        """
+        if not self.client:
+            return []
+
+        try:
+            since = datetime.utcnow() - timedelta(days=days - 1)
+            response = (
+                self.client.table("health_logs")
+                .select("measured_at, weight, temperature")
+                .eq("animal_id", animal_id)
+                .gte("measured_at", since.isoformat())
+                .order("measured_at", desc=False)
+                .execute()
+            )
+
+            logs: List[Dict[str, Any]] = []
+            for row in response.data or []:
+                try:
+                    dt = datetime.fromisoformat(row["measured_at"].replace("Z", "+00:00"))
+                except Exception:
+                    dt = datetime.utcnow()
+                logs.append(
+                    {
+                        "date": dt,
+                        "weight": row.get("weight"),
+                        "temperature": row.get("temperature"),
+                    }
+                )
+            return logs
+        except Exception as e:
+            print(f"Sağlık geçmişi okunurken hata: {e}")
+            return []
+
     def _to_animal(self, item: Dict[str, Any]) -> Animal:
         """Supabase satırını Animal modeline dönüştür."""
         mapped = {
@@ -114,6 +199,8 @@ class SupabaseDatabase(BaseDatabase):
             "height": item.get("height"),
             "weight": item.get("weight"),
             "created_at": item.get("created_at"),
+            "temperature": item.get("temperature"),
+            "baseline_weight": item.get("baseline_weight"),
         }
         return Animal(mapped)
 
@@ -129,6 +216,14 @@ class SupabaseDatabase(BaseDatabase):
             "height": float(animal.boy) if animal.boy not in (None, "") else None,
             "weight": float(animal.kilo) if animal.kilo not in (None, "") else None,
         }
+        
+        # Temperature ve baseline_weight - Supabase'e kaydet
+        if hasattr(animal, 'temperature') and animal.temperature is not None:
+            payload["temperature"] = float(animal.temperature)
+        
+        if hasattr(animal, 'baseline_weight') and animal.baseline_weight is not None:
+            payload["baseline_weight"] = float(animal.baseline_weight)
+        
         # ID verilmemişse göndermeyelim, Supabase identity üretsin
         if payload.get("id") is None:
             payload.pop("id", None)

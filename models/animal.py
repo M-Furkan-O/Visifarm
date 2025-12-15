@@ -17,9 +17,11 @@ class Animal:
         self.saglik_durumu = data.get("saglik_durumu", "İyi") if data else "İyi"
         self.notlar = data.get("notlar", "") if data else ""
         self.olusturma_tarihi = data.get("olusturma_tarihi") if data else data.get("created_at") if data else datetime.now().isoformat()
-        
         # YENİ ALAN: Fotoğraf URL'si
         self.photo_url = data.get("photo_url") if data else None 
+        # AI Health Monitoring için ek alanlar
+        self.temperature = data.get("temperature") if data else None  # Mevcut vücut sıcaklığı (°C)
+        self.baseline_weight = data.get("baseline_weight") if data else None  # Profil kilosu (kg)
     
     def to_dict(self) -> Dict[str, Any]:
         """Hayvan verisini dictionary'ye çevir"""
@@ -37,6 +39,11 @@ class Animal:
             "saglik_durumu": self.saglik_durumu,
             "notlar": self.notlar,
             "olusturma_tarihi": self.olusturma_tarihi,
-            # YENİ EKLENEN KISIM:
-            "photo_url": self.photo_url
+            "photo_url": self.photo_url,
+            "temperature": self.temperature,
+            "baseline_weight": self.baseline_weight,
         }
+    
+    def __str__(self):
+        return f"{self.isim} ({self.tur})"
+

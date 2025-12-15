@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+from datetime import datetime
 import uuid
 
 from database.base_db import BaseDatabase
@@ -113,23 +114,42 @@ class LocalDatabase(BaseDatabase):
         
         return [Animal(item) for item in results]
 
+    # -------- Fotoğraflar (yerel DB için stub implementasyonlar) --------
+
     def upload_photo(self, animal_id: str, local_file_path: Path, filename: str) -> Optional[str]:
         """
         Yerel veritabanı için yer tutucu: Dosyayı yüklemez, sadece yerel yolu döndürür.
         """
-        # Burada dosya zaten yerel olarak kaydedilmiştir.
         return str(local_file_path)
     
     def delete_photo(self, animal_id: str, filename: str) -> bool:
         """
         Yerel veritabanı için: Dosya silme işlemi PhotoDialog'da yapılacak.
         """
-        # Yerel dosya silme işlemi PhotoDialog'da yapılıyor
         return True
     
     def list_photos(self, animal_id: str) -> List[Dict[str, Any]]:
         """
         Yerel veritabanı için: Fotoğraflar yerel dosya sisteminden okunacak.
         """
-        # PhotoDialog'da yerel dosya sistemi kullanılıyor
         return []
+
+    # -------- Sağlık geçmişi (kilo + ateş) - Yerel DB için basit/no-op --------
+
+    def add_health_log(
+        self,
+        animal_id: str,
+        weight: Optional[float],
+        temperature: Optional[float],
+        measured_at: Optional[datetime] = None,
+    ) -> bool:
+        """
+        Yerel veritabanında sağlık geçmişi tutulmuyor.
+        Arayüz uyumluluğu için no-op.
+        """
+        return True
+
+    def get_health_logs(self, animal_id: str, days: int = 7):
+        """Yerel veritabanı için sağlık geçmişi yok, boş liste döner."""
+        return []
+

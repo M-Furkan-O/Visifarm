@@ -39,7 +39,7 @@ class LoginWindow(QMainWindow):
         
         # Başlık
         title = QLabel("Ahır Hayvan Yönetim Sistemi")
-        title.setFont(QFont("Arial", 22, QFont.Bold))
+        title.setFont(QFont("", 22, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         
@@ -47,12 +47,12 @@ class LoginWindow(QMainWindow):
         
         # Kullanıcı adı label
         username_label = QLabel("Kullanıcı Adı:")
-        username_label.setFont(QFont("Arial", 13, QFont.Bold))
+        username_label.setFont(QFont("", 13, QFont.Bold))
         layout.addWidget(username_label)
         
         # Kullanıcı adı input
         self.username_entry = QLineEdit()
-        self.username_entry.setFont(QFont("Arial", 14))
+        self.username_entry.setFont(QFont("", 14))
         self.username_entry.setMinimumHeight(50)
         self.username_entry.setStyleSheet("""
             QLineEdit {
@@ -71,7 +71,7 @@ class LoginWindow(QMainWindow):
         
         # Şifre label
         password_label = QLabel("Şifre:")
-        password_label.setFont(QFont("Arial", 13, QFont.Bold))
+        password_label.setFont(QFont("", 13, QFont.Bold))
         layout.addWidget(password_label)
         
         # Şifre için horizontal layout (input + göster/gizle butonu)
@@ -80,7 +80,7 @@ class LoginWindow(QMainWindow):
         
         # Şifre input
         self.password_entry = QLineEdit()
-        self.password_entry.setFont(QFont("Arial", 14))
+        self.password_entry.setFont(QFont("", 14))
         self.password_entry.setEchoMode(QLineEdit.Password)
         self.password_entry.setMinimumHeight(50)
         self.password_entry.setStyleSheet("""
@@ -125,7 +125,7 @@ class LoginWindow(QMainWindow):
         
         # Giriş butonu
         login_btn = QPushButton("Giriş Yap")
-        login_btn.setFont(QFont("Arial", 15, QFont.Bold))
+        login_btn.setFont(QFont("", 15, QFont.Bold))
         login_btn.setMinimumHeight(50)
         login_btn.setStyleSheet("""
             QPushButton {
@@ -147,7 +147,7 @@ class LoginWindow(QMainWindow):
         
         # Bilgi etiketi
         info_label = QLabel("Varsayılan: admin / admin123")
-        info_label.setFont(QFont("Arial", 11))
+        info_label.setFont(QFont("", 11))
         info_label.setAlignment(Qt.AlignCenter)
         info_label.setStyleSheet("color: gray;")
         layout.addWidget(info_label)

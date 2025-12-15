@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 from typing import Dict, Any
+from datetime import datetime, timedelta
+
 from serial_reader import SerialReader
 import requests
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -8,12 +10,17 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QListWidgetItem, QComboBox, QGroupBox, QGridLayout, QTextEdit,
                              QDialog, QDialogButtonBox, QFormLayout, QFileDialog, QDateEdit,
                              QScrollArea)
-from PyQt5.QtCore import Qt, QRegExp, QDate
-from PyQt5.QtGui import QFont, QRegExpValidator, QPixmap
+from PyQt5.QtCore import Qt, pyqtSignal, QRegExp, QDate
+from PyQt5.QtGui import QFont, QColor, QRegExpValidator, QPixmap
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+import pandas as pd
+
 from database import get_database
 from models.animal import Animal
 from config import APP_CONFIG, ANIMAL_TYPES, GENDERS
 from utils.validators import validate_animal_data
+from utils.health_analyzer import HealthAnalyzer
 
 class Dashboard(QMainWindow):
     def __init__(self, username, on_logout=None):
@@ -58,14 +65,14 @@ class Dashboard(QMainWindow):
         header_layout.setContentsMargins(20, 0, 20, 0)
         
         title_label = QLabel(APP_CONFIG['title'])
-        title_label.setFont(QFont("Arial", 18, QFont.Bold))
+        title_label.setFont(QFont("", 18, QFont.Bold))
         title_label.setStyleSheet("color: white;")
         header_layout.addWidget(title_label)
         
         header_layout.addStretch()
         
         user_label = QLabel(f"Hoş geldiniz, {self.username}")
-        user_label.setFont(QFont("Arial", 12))
+        user_label.setFont(QFont("", 12))
         user_label.setStyleSheet("color: white; margin-right: 15px;")
         header_layout.addWidget(user_label)
 
@@ -116,7 +123,7 @@ class Dashboard(QMainWindow):
         
         # Arama bölümü
         search_label = QLabel("Ara:")
-        search_label.setFont(QFont("Arial", 11, QFont.Bold))
+        search_label.setFont(QFont("", 11, QFont.Bold))
         search_label.setStyleSheet("color: #2c3e50;")
         layout.addWidget(search_label)
         
@@ -125,7 +132,7 @@ class Dashboard(QMainWindow):
         search_layout.setSpacing(8)
         
         self.search_entry = QLineEdit()
-        self.search_entry.setFont(QFont("Arial", 11))
+        self.search_entry.setFont(QFont("", 11))
         self.search_entry.setPlaceholderText("İsim, tür, renk veya RFID ara...")
         self.search_entry.setStyleSheet("""
             QLineEdit {
@@ -145,7 +152,7 @@ class Dashboard(QMainWindow):
         
         # RFID okuma butonu
         self.rfid_search_btn = QPushButton("📡 RFID Oku")
-        self.rfid_search_btn.setFont(QFont("Arial", 10))
+        self.rfid_search_btn.setFont(QFont("", 10))
         self.rfid_search_btn.setStyleSheet("""
             QPushButton {
                 background-color: #3498db;
@@ -177,7 +184,7 @@ class Dashboard(QMainWindow):
         
         # Filtreler
         filter_group = QGroupBox("Filtreler")
-        filter_group.setFont(QFont("Arial", 11, QFont.Bold))
+        filter_group.setFont(QFont("", 11, QFont.Bold))
         filter_group.setStyleSheet("""
             QGroupBox {
                 border: 2px solid #ecf0f1;
@@ -197,7 +204,7 @@ class Dashboard(QMainWindow):
         
         # Tür filtresi
         type_label = QLabel("Tür:")
-        type_label.setFont(QFont("Arial", 10))
+        type_label.setFont(QFont("", 10))
         type_label.setStyleSheet("color: #34495e;")
         filter_layout.addWidget(type_label)
         
@@ -223,7 +230,7 @@ class Dashboard(QMainWindow):
         
         # Cinsiyet filtresi
         gender_label = QLabel("Cinsiyet:")
-        gender_label.setFont(QFont("Arial", 10))
+        gender_label.setFont(QFont("", 10))
         gender_label.setStyleSheet("color: #34495e;")
         filter_layout.addWidget(gender_label)
         
@@ -251,13 +258,13 @@ class Dashboard(QMainWindow):
         
         # Liste başlığı
         list_label = QLabel("Hayvan Listesi")
-        list_label.setFont(QFont("Arial", 14, QFont.Bold))
+        list_label.setFont(QFont("", 14, QFont.Bold))
         list_label.setStyleSheet("color: #2c3e50; padding-top: 5px;")
         layout.addWidget(list_label)
         
         # Hayvan listesi
         self.animal_list = QListWidget()
-        self.animal_list.setFont(QFont("Arial", 11))
+        self.animal_list.setFont(QFont("", 11))
         self.animal_list.setStyleSheet("""
             QListWidget {
                 border: 2px solid #ecf0f1;
@@ -271,8 +278,8 @@ class Dashboard(QMainWindow):
                 color: black;
             }
             QListWidget::item:selected {
-                background-color: #3498db;
-                color: white;
+                background-color: transparent;
+                border: 2px solid #3498db;
             }
             QListWidget::item:hover {
                 background-color: #e8f4f8;
@@ -287,7 +294,7 @@ class Dashboard(QMainWindow):
         button_layout.setSpacing(8)
         
         add_btn = QPushButton("+ Yeni Hayvan")
-        add_btn.setFont(QFont("Arial", 11, QFont.Bold))
+        add_btn.setFont(QFont("", 11, QFont.Bold))
         add_btn.setStyleSheet("""
             QPushButton {
                 background-color: #27ae60;
@@ -307,7 +314,7 @@ class Dashboard(QMainWindow):
         button_layout.addWidget(add_btn)
         
         edit_btn = QPushButton("✏️ Düzenle")
-        edit_btn.setFont(QFont("Arial", 11))
+        edit_btn.setFont(QFont("", 11))
         edit_btn.setStyleSheet("""
             QPushButton {
                 background-color: #3498db;
@@ -329,7 +336,7 @@ class Dashboard(QMainWindow):
         button_layout.addWidget(edit_btn)
         
         delete_btn = QPushButton("🗑️ Sil")
-        delete_btn.setFont(QFont("Arial", 11))
+        delete_btn.setFont(QFont("", 11))
         delete_btn.setStyleSheet("""
             QPushButton {
                 background-color: #e74c3c;
@@ -363,7 +370,7 @@ class Dashboard(QMainWindow):
         
         # Başlık
         detail_label = QLabel("Hayvan Detayları")
-        detail_label.setFont(QFont("Arial", 14, QFont.Bold))
+        detail_label.setFont(QFont("", 14, QFont.Bold))
         layout.addWidget(detail_label)
         
         # Detay alanı (scrollable)
@@ -389,9 +396,50 @@ class Dashboard(QMainWindow):
         
         self.animal_list.clear()
         for animal in animals:
-            item_text = f"{animal.isim} - {animal.tur} ({animal.cinsiyet})"
+            # Önce sağlık analizini yap (ikon ve renk için kullanacağız)
+            try:
+                temp = getattr(animal, "temperature", None)
+                current_weight = float(animal.kilo) if animal.kilo else None
+                analysis = HealthAnalyzer.analyze_health(animal, temp, current_weight)
+                status = analysis.get("health_status", "GOOD")
+            except Exception:
+                status = "GOOD"
+
+            # Duruma göre isim başına ikon ekle
+            prefix = ""
+            if status == "CRITICAL":
+                prefix = "🔴 "
+            elif status == "WARNING":
+                prefix = "🟡 "
+
+            item_text = f"{prefix}{animal.isim} - {animal.tur} ({animal.cinsiyet})"
             item = QListWidgetItem(item_text)
             item.setData(Qt.UserRole, animal.id)
+
+            # Sağlık analizine göre satır rengini ayarla (AI HealthAnalyzer)
+            try:
+                temp = getattr(animal, "temperature", None)
+                current_weight = float(animal.kilo) if animal.kilo else None
+                analysis = HealthAnalyzer.analyze_health(animal, temp, current_weight)
+                status = analysis.get("health_status", "GOOD")
+            except Exception:
+                status = "GOOD"
+
+            if status == "CRITICAL":
+                # Kırmızı tonlar
+                item.setBackground(QColor("#ffebee"))   # çok açık kırmızı
+                item.setForeground(QColor("#ea4335"))   # koyu kırmızı yazı
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+            elif status == "WARNING":
+                # Sarı / turuncu tonlar
+                item.setBackground(QColor("#fff8e1"))   # açık sarı
+                item.setForeground(QColor("#ea4335"))   # turuncu yazı
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+
             self.animal_list.addItem(item)
     
     def on_search(self):
@@ -478,7 +526,7 @@ class Dashboard(QMainWindow):
         self.clear_details()
         
         welcome_label = QLabel("Lütfen listeden bir hayvan seçin veya yeni hayvan ekleyin")
-        welcome_label.setFont(QFont("Arial", 12))
+        welcome_label.setFont(QFont("", 12))
         welcome_label.setStyleSheet("color: #7f8c8d;")
         welcome_label.setAlignment(Qt.AlignCenter)
         self.detail_layout.addWidget(welcome_label)
@@ -495,74 +543,361 @@ class Dashboard(QMainWindow):
         """Hayvan detaylarını göster"""
         self.clear_details()
         
-        # Hayvan adı
-        name_label = QLabel(animal.isim)
-        name_label.setFont(QFont("Arial", 20, QFont.Bold))
-        name_label.setStyleSheet("color: #2c3e50;")
-        self.detail_layout.addWidget(name_label)
+        # AI Health Analysis - Sağlık durumunu analiz et
+        current_temperature = getattr(animal, 'temperature', None)
+        current_weight = float(animal.kilo) if animal.kilo else None
+        health_analysis = HealthAnalyzer.analyze_health(animal, current_temperature, current_weight)
         
-        # Detay bilgileri
+        # Hayvan adı - Daha görsel ve modern
+        name_container = QWidget()
+        name_container.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3498db, stop:1 #2980b9); border-radius: 12px; padding: 20px; margin-bottom: 15px;")
+        name_layout = QHBoxLayout()
+        name_container.setLayout(name_layout)
+        name_layout.setContentsMargins(15, 10, 15, 10)
+        
+        name_label = QLabel(f"🐄 {animal.isim}")
+        name_label.setFont(QFont("", 22, QFont.Bold))
+        name_label.setStyleSheet("color: white; background: transparent;")
+        name_layout.addWidget(name_label)
+        name_layout.addStretch()
+        
+        # Sağlık durumu badge'i (sağ üstte)
+        health_badge = QLabel()
+        health_badge.setFont(QFont("", 11, QFont.Bold))
+        health_badge.setAlignment(Qt.AlignCenter)
+        # Boyutu Qt'ya bırak, sadece minimum genişlik ver
+        health_badge.setMinimumWidth(110)
+        
+        if health_analysis["health_status"] == "CRITICAL":
+            health_badge.setText("KRİTİK")
+            health_badge.setStyleSheet("""
+                QLabel {
+                    background-color: #d32f2f;
+                    color: white;
+                    border-radius: 18px;
+                    padding: 6px 20px;
+                }
+            """)
+        elif health_analysis["health_status"] == "WARNING":
+            health_badge.setText("UYARI")
+            health_badge.setStyleSheet("""
+                QLabel {
+                    background-color: #f57c00;
+                    color: white;
+                    border-radius: 18px;
+                    padding: 6px 20px;
+                }
+            """)
+        else:
+            health_badge.setText("İYİ")
+            health_badge.setStyleSheet("""
+                QLabel {
+                    background-color: #27ae60;
+                    color: white;
+                    border-radius: 18px;
+                    padding: 6px 20px;
+                }
+            """)
+        name_layout.addWidget(health_badge)
+        self.detail_layout.addWidget(name_container)
+        
+        # Spacing
+        self.detail_layout.addSpacing(10)
+        
+        # AI Uyarıları Göster (CRITICAL ve WARNING) - Sade kart tasarımı
+        if health_analysis["alerts"]:
+            # Başlık - Daha belirgin
+            alerts_title = QLabel("⚠️ Sağlık Uyarıları")
+            alerts_title.setFont(QFont("", 14, QFont.Bold))
+            alerts_title.setStyleSheet("color: #2c3e50; padding: 10px 0px 5px 0px;")
+            self.detail_layout.addWidget(alerts_title)
+            
+            # Her uyarı için sade kart tasarımı
+            for alert in health_analysis["alerts"]:
+                is_critical = alert["type"] == "CRITICAL"
+
+                bg_color = "#ffe5e5" if is_critical else "#fff5e6"
+                text_color = "#c62828" if is_critical else "#e65100"
+                border_color = "#f5b7b1" if is_critical else "#f8c471"
+
+                # Ana container
+                alert_container = QWidget()
+                alert_container.setStyleSheet(f"""
+                    QWidget {{
+                        background-color: {bg_color};
+                        border: 1px solid {border_color};
+                        border-radius: 8px;
+                        padding: 0px;
+                    }}
+                """)
+                alert_layout = QHBoxLayout()
+                alert_container.setLayout(alert_layout)
+                alert_layout.setContentsMargins(12, 8, 12, 8)
+                alert_layout.setSpacing(12)
+                
+                # İkon (sol tarafta, sade)
+                icon_label = QLabel()
+                icon_label.setStyleSheet("background: transparent;")
+                icon_label.setAlignment(Qt.AlignCenter)
+                icon_label.setFixedWidth(28)
+
+                icon_text = alert.get("icon", "⚠️")
+                # Ateş uyarılarında termometre ikonunu kullan
+                if icon_text in ("🔥", "🌡️"):
+                    pix = QPixmap("assets/termometre.png")
+                    if not pix.isNull():
+                        icon_label.setPixmap(
+                            pix.scaled(22, 22, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        )
+                    else:
+                        icon_label.setText("🌡️")
+                        icon_label.setFont(QFont("", 18))
+                # Kilo kaybı uyarılarında özel ikon kullan
+                elif icon_text in ("⚖️",):
+                    pix = QPixmap("assets/kilo_kayip.png")
+                    if not pix.isNull():
+                        icon_label.setPixmap(
+                            pix.scaled(22, 22, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        )
+                    else:
+                        icon_label.setText("⚖️")
+                        icon_label.setFont(QFont("", 18))
+                else:
+                    icon_label.setText(icon_text)
+                    icon_label.setFont(QFont("", 18))
+
+                alert_layout.addWidget(icon_label)
+                
+                # Mesaj (sağ tarafta, tek satır kalın metin)
+                message_label = QLabel(alert["message"])
+                message_label.setFont(QFont("", 11, QFont.Bold))
+                message_label.setStyleSheet(f"color: {text_color}; background: transparent;")
+                message_label.setWordWrap(True)
+                message_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                alert_layout.addWidget(message_label, 1)
+                
+                alert_container.setMinimumHeight(40)
+                self.detail_layout.addWidget(alert_container)
+                self.detail_layout.addSpacing(6)
+        
+        # Detay bilgileri - Modern kart tasarımı
+        details_title = QLabel("📋 Hayvan Bilgileri")
+        details_title.setFont(QFont("", 14, QFont.Bold))
+        details_title.setStyleSheet("color: #2c3e50; padding: 15px 0px 10px 0px;")
+        self.detail_layout.addWidget(details_title)
+        
+        # Ana bilgi container'ı
+        info_container = QWidget()
+        info_container.setStyleSheet("""
+            QWidget {
+                background-color: #f8f9fa;
+                border-radius: 12px;
+                padding: 20px;
+            }
+        """)
         info_grid = QGridLayout()
-        info_grid.setSpacing(10)
+        info_container.setLayout(info_grid)
+        info_grid.setSpacing(15)
+        info_grid.setContentsMargins(15, 15, 15, 15)
+        
+        # Sağlık durumunu renklendir - Analiz sonucuna göre dinamik göster
+        health_status_color = "#2c3e50"
+        if health_analysis["health_status"] == "CRITICAL":
+            health_status_display = "🔴 KRİTİK"
+            health_status_color = "#d32f2f"
+        elif health_analysis["health_status"] == "WARNING":
+            health_status_display = "🟡 UYARI"
+            health_status_color = "#f57c00"
+        else:
+            health_status_display = "✅ İYİ"
+            health_status_color = "#27ae60"
         
         info_items = [
-            ("RFID", animal.rfid_tag or "Belirtilmemiş"),
-            ("Tür", animal.tur),
-            ("Yaş", f"{animal.yas} yaşında"),
-            ("Kilo", f"{animal.kilo} kg"),
-            ("Boy", f"{animal.boy} cm"),
-            ("Cinsiyet", animal.cinsiyet),
-            ("Renk", animal.renk),
-            ("Doğum Tarihi", animal.dogum_tarihi or "Belirtilmemiş"),
-            ("Sağlık Durumu", animal.saglik_durumu),
+            ("🏷️ RFID", animal.rfid_tag or "Belirtilmemiş"),
+            ("🐄 Tür", animal.tur),
+            ("🎂 Yaş", f"{animal.yas} yaşında"),
+            ("⚖️ Kilo", f"{animal.kilo} kg"),
+            ("📏 Boy", f"{animal.boy} cm"),
+            ("👤 Cinsiyet", animal.cinsiyet),
+            ("🎨 Renk", animal.renk),
+            ("📅 Doğum Tarihi", animal.dogum_tarihi or "Belirtilmemiş"),
+            ("💊 Sağlık Durumu", health_status_display),
         ]
         
+        # Temperature göster (varsa)
+        if current_temperature is not None:
+            temp_display = f"{current_temperature}°C"
+            if health_analysis["temperature_status"]["status"] == "CRITICAL":
+                temp_display = f"🔴 {temp_display}"
+            elif health_analysis["temperature_status"]["status"] == "WARNING":
+                temp_display = f"🟡 {temp_display}"
+            else:
+                temp_display = f"🌡️ {temp_display}"
+            info_items.append(("🌡️ Vücut Sıcaklığı", temp_display))
+        
+        # Baseline weight göster (varsa)
+        if hasattr(animal, 'baseline_weight') and animal.baseline_weight:
+            info_items.append(("📊 Profil Kilosu", f"{animal.baseline_weight} kg"))
+        
         for i, (label, value) in enumerate(info_items):
+            # Her bilgi için kart tasarımı
+            item_container = QWidget()
+            item_container.setStyleSheet("""
+                QWidget {
+                    background-color: white;
+                    border-radius: 8px;
+                    padding: 12px;
+                    border: 1px solid #e0e0e0;
+                }
+            """)
+            item_layout = QVBoxLayout()
+            item_container.setLayout(item_layout)
+            item_layout.setContentsMargins(10, 8, 10, 8)
+            item_layout.setSpacing(5)
+            
             # Label
-            label_widget = QLabel(label + ":")
-            label_widget.setFont(QFont("Arial", 10))
-            label_widget.setStyleSheet("color: #7f8c8d;")
-            info_grid.addWidget(label_widget, i // 2, (i % 2) * 2)
+            label_widget = QLabel(label)
+            label_widget.setFont(QFont("", 10))
+            label_widget.setStyleSheet("color: #7f8c8d; background: transparent;")
+            item_layout.addWidget(label_widget)
             
             # Value
             value_widget = QLabel(value)
-            value_widget.setFont(QFont("Arial", 14, QFont.Bold))
-            value_widget.setStyleSheet("color: #2c3e50; background-color: #ecf0f1; padding: 10px; border-radius: 5px;")
-            info_grid.addWidget(value_widget, i // 2, (i % 2) * 2 + 1)
+            value_widget.setFont(QFont("", 13, QFont.Bold))
+            # Sağlık durumu için özel renk
+            if "Sağlık Durumu" in label:
+                value_widget.setStyleSheet(f"""
+                    QLabel {{
+                        color: {health_status_color};
+                        background: transparent;
+                        padding: 5px 0px;
+                    }}
+                """)
+            elif "Vücut Sıcaklığı" in label:
+                # Sıcaklık için özel renk
+                if "🔴" in value:
+                    value_widget.setStyleSheet("color: #d32f2f; background: transparent; padding: 5px 0px;")
+                elif "🟡" in value:
+                    value_widget.setStyleSheet("color: #f57c00; background: transparent; padding: 5px 0px;")
+                else:
+                    value_widget.setStyleSheet("color: #2c3e50; background: transparent; padding: 5px 0px;")
+            else:
+                value_widget.setStyleSheet("color: #2c3e50; background: transparent; padding: 5px 0px;")
+            item_layout.addWidget(value_widget)
+            
+            # Grid'e ekle (2 sütunlu)
+            info_grid.addWidget(item_container, i // 2, i % 2)
         
-        info_widget = QWidget()
-        info_widget.setLayout(info_grid)
-        self.detail_layout.addWidget(info_widget)
+        self.detail_layout.addWidget(info_container)
         
-        # Notlar
+        # Notlar - Modern kart tasarımı
         if animal.notlar:
-            notes_label = QLabel("Notlar:")
-            notes_label.setFont(QFont("Arial", 11, QFont.Bold))
-            notes_label.setStyleSheet("color: #2c3e50;")
-            self.detail_layout.addWidget(notes_label)
+            self.detail_layout.addSpacing(15)
+            notes_title = QLabel("📝 Notlar")
+            notes_title.setFont(QFont("", 14, QFont.Bold))
+            notes_title.setStyleSheet("color: #2c3e50; padding: 10px 0px 5px 0px;")
+            self.detail_layout.addWidget(notes_title)
+            
+            notes_container = QWidget()
+            notes_container.setStyleSheet("""
+                QWidget {
+                    background-color: #fff9e6;
+                    border-left: 4px solid #f39c12;
+                    border-radius: 10px;
+                    padding: 15px;
+                }
+            """)
+            notes_layout = QVBoxLayout()
+            notes_container.setLayout(notes_layout)
+            notes_layout.setContentsMargins(10, 10, 10, 10)
             
             notes_text = QLabel(animal.notlar)
-            notes_text.setFont(QFont("Arial", 10))
+            notes_text.setFont(QFont("", 11))
             notes_text.setWordWrap(True)
-            notes_text.setStyleSheet("background-color: #fafafa; color: black; padding: 10px; border-radius: 5px;")
-            self.detail_layout.addWidget(notes_text)
+            notes_text.setStyleSheet("color: #2c3e50; background: transparent; padding: 5px;")
+            notes_layout.addWidget(notes_text)
+            
+            self.detail_layout.addWidget(notes_container)
         
-        photos_btn = QPushButton("Fotoğraflar")
+        # Fotoğraf ve sağlık butonları - Modern tasarım
+        self.detail_layout.addSpacing(20)
+        button_container = QWidget()
+        button_layout = QHBoxLayout()
+        button_container.setLayout(button_layout)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        
+        photos_btn = QPushButton("📷 Fotoğrafları Görüntüle")
+        photos_btn.setFont(QFont("", 12, QFont.Bold))
+        photos_btn.setCursor(Qt.PointingHandCursor)
         photos_btn.setStyleSheet("""
             QPushButton {
-                background-color: #8e44ad;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #9b59b6, stop:1 #8e44ad);
                 color: white;
-                padding: 10px;
+                padding: 15px 25px;
                 border: none;
-                border-radius: 5px;
+                border-radius: 10px;
                 font-weight: bold;
+                min-height: 45px;
             }
-            QPushButton:hover { background-color: #7d3c98; }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #8e44ad, stop:1 #7d3c98);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7d3c98, stop:1 #6c3483);
+            }
         """)
         photos_btn.clicked.connect(lambda: self.open_photo_dialog(animal))
-        self.detail_layout.addSpacing(10)
-        self.detail_layout.addWidget(photos_btn)
+        button_layout.addWidget(photos_btn)
+
+        # 7 günlük sağlık grafiği butonu
+        trend_btn = QPushButton("📈 7 Günlük Sağlık Grafiği")
+        trend_btn.setFont(QFont("", 12, QFont.Bold))
+        trend_btn.setCursor(Qt.PointingHandCursor)
+        trend_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #34495e;
+                color: white;
+                padding: 15px 25px;
+                border: none;
+                border-radius: 10px;
+                font-weight: bold;
+                min-height: 45px;
+            }
+            QPushButton:hover {
+                background-color: #2c3e50;
+            }
+            QPushButton:pressed {
+                background-color: #22313f;
+            }
+        """)
+        trend_btn.clicked.connect(lambda: self.open_health_trend_dialog(animal))
+        button_layout.addWidget(trend_btn)
+
+        # Manuel ölçüm ekleme butonu
+        log_btn = QPushButton("➕ Ölçüm Ekle")
+        log_btn.setFont(QFont("", 12, QFont.Bold))
+        log_btn.setCursor(Qt.PointingHandCursor)
+        log_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #16a085;
+                color: white;
+                padding: 15px 25px;
+                border: none;
+                border-radius: 10px;
+                font-weight: bold;
+                min-height: 45px;
+            }
+            QPushButton:hover {
+                background-color: #13856c;
+            }
+            QPushButton:pressed {
+                background-color: #0f6a55;
+            }
+        """)
+        log_btn.clicked.connect(lambda: self.open_health_log_dialog(animal))
+        button_layout.addWidget(log_btn)
         
+        self.detail_layout.addWidget(button_container)
         self.detail_layout.addStretch()
     
     def open_photo_dialog(self, animal: Animal):
@@ -570,12 +905,77 @@ class Dashboard(QMainWindow):
         dialog = PhotoDialog(self, animal)
         dialog.exec_()
     
+    def open_health_trend_dialog(self, animal: Animal):
+        """
+        Seçili hayvan için 7 günlük kilo + ateş grafiğini göster.
+        Supabase'den sağlık geçmişi verilerini okur; yoksa bilgi mesajı gösterir.
+        """
+        if not animal.id:
+            QMessageBox.information(
+                self,
+                "Bilgi",
+                "Bu hayvan henüz kaydedilmemiş, sağlık geçmişi bulunmuyor.",
+            )
+            return
+
+        # Veritabanından son 7 günün sağlık geçmişini oku
+        if hasattr(self.db, "get_health_logs"):
+            history_data = self.db.get_health_logs(animal.id, days=7)
+        else:
+            history_data = []
+
+        dialog = HealthTrendDialog(self, animal, history_data)
+        dialog.exec_()
+
+    def open_health_log_dialog(self, animal: Animal):
+        """Seçili hayvan için manuel kilo + ateş ölçümü ekle."""
+        if not animal.id:
+            QMessageBox.information(
+                self,
+                "Bilgi",
+                "Bu hayvan henüz kaydedilmemiş, ölçüm eklenemez.",
+            )
+            return
+
+        dialog = HealthLogDialog(self, animal)
+        if dialog.exec_() == QDialog.Accepted and dialog.result:
+            data = dialog.result
+            try:
+                self.db.add_health_log(
+                    animal.id,
+                    data.get("weight"),
+                    data.get("temperature"),
+                    data.get("measured_at"),
+                )
+                QMessageBox.information(self, "Başarılı", "Yeni ölçüm başarıyla kaydedildi.")
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", f"Ölçüm kaydedilirken bir hata oluştu:\n{e}")
+    
     def add_animal(self):
         """Yeni hayvan ekle"""
         dialog = AnimalDialog(self, "Yeni Hayvan Ekle")
         if dialog.exec_() == QDialog.Accepted and dialog.result:
             animal = Animal(dialog.result)
+            
+            # AI Health Analysis - Sağlık durumunu otomatik güncelle
+            temperature = getattr(animal, 'temperature', None)
+            current_weight = float(animal.kilo) if animal.kilo else None
+            animal = HealthAnalyzer.update_animal_health_status(animal, temperature, current_weight)
+            
+            # Eğer baseline_weight yoksa, mevcut kiloyu baseline olarak ayarla
+            if not animal.baseline_weight and animal.kilo:
+                animal.baseline_weight = float(animal.kilo)
+            
             if self.db.add_animal(animal):
+                # İlk kayıt için sağlık geçmişine de bir ölçüm ekle
+                try:
+                    self.db.add_health_log(
+                        animal.id,
+                        float(animal.kilo) if animal.kilo else None,
+                        getattr(animal, "temperature", None),
+                    )
+                except Exception:
+                    pass
                 QMessageBox.information(self, "Başarılı", "Hayvan başarıyla eklendi!")
                 self.on_search()
             else:
@@ -595,7 +995,29 @@ class Dashboard(QMainWindow):
         dialog = AnimalDialog(self, "Hayvan Düzenle", animal.to_dict())
         if dialog.exec_() == QDialog.Accepted and dialog.result:
             updated_animal = Animal(dialog.result)
+            
+            # Eğer baseline_weight girilmediyse, mevcut baseline_weight'i koru
+            if not updated_animal.baseline_weight and hasattr(animal, 'baseline_weight') and animal.baseline_weight:
+                updated_animal.baseline_weight = animal.baseline_weight
+            # Eğer hiç baseline_weight yoksa ve yeni kilo girildiyse, onu baseline yap
+            elif not updated_animal.baseline_weight and updated_animal.kilo:
+                updated_animal.baseline_weight = float(updated_animal.kilo)
+            
+            # AI Health Analysis - Sağlık durumunu otomatik güncelle
+            temperature = getattr(updated_animal, 'temperature', None)
+            current_weight = float(updated_animal.kilo) if updated_animal.kilo else None
+            updated_animal = HealthAnalyzer.update_animal_health_status(updated_animal, temperature, current_weight)
+            
             if self.db.update_animal(self.selected_animal_id, updated_animal):
+                # Güncellenen ölçümleri sağlık geçmişine ekle
+                try:
+                    self.db.add_health_log(
+                        self.selected_animal_id,
+                        float(updated_animal.kilo) if updated_animal.kilo else None,
+                        getattr(updated_animal, "temperature", None),
+                    )
+                except Exception:
+                    pass
                 QMessageBox.information(self, "Başarılı", "Hayvan başarıyla güncellendi!")
                 self.on_search()
                 updated_animal = self.db.get_animal_by_id(self.selected_animal_id)
@@ -677,7 +1099,7 @@ class PhotoDialog(QDialog):
         # Sol panel (tarih listesi)
         left_layout = QVBoxLayout()
         date_label = QLabel("Tarihler:")
-        date_label.setFont(QFont("Arial", 11, QFont.Bold))
+        date_label.setFont(QFont("", 11, QFont.Bold))
         left_layout.addWidget(date_label)
         
         self.date_list = QListWidget()
@@ -690,13 +1112,15 @@ class PhotoDialog(QDialog):
             QListWidget::item {
                 padding: 8px;
                 border-bottom: 1px solid #ecf0f1;
+                color: #2c3e50;
             }
             QListWidget::item:selected {
                 background-color: #3498db;
-                color: white;
+                color: black;
             }
             QListWidget::item:hover {
                 background-color: #e8f4f8;
+                color: #2c3e50;
             }
         """)
         self.date_list.itemClicked.connect(self.on_date_selected)
@@ -943,6 +1367,149 @@ class PhotoDialog(QDialog):
             QMessageBox.critical(self, "Hata", f"Fotoğraf silinirken hata oluştu: {str(e)}")
 
 
+class HealthTrendDialog(QDialog):
+    """Seçili hayvan için 7 günlük kilo + ateş grafiği"""
+
+    def __init__(self, parent, animal: Animal, history_data):
+        """
+        history_data: [
+            {"date": datetime, "weight": float, "temperature": float},
+            ...
+        ]
+        """
+        super().__init__(parent)
+        self.animal = animal
+        self.history_data = history_data or []
+
+        self.setWindowTitle(f"{animal.isim} - Sağlık Trendi (7 Gün)")
+        self.setMinimumSize(800, 500)
+
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        # Matplotlib Figure
+        # (Bazı ortamlarda global import sorun çıkarmasın diye lokal import da yapıyoruz)
+        from matplotlib.figure import Figure as _Figure
+        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as _FigureCanvas
+
+        self.figure = _Figure(figsize=(8, 4))
+        self.canvas = _FigureCanvas(self.figure)
+        layout.addWidget(self.canvas)
+
+        self.ax1 = self.figure.add_subplot(111)
+        self.ax2 = self.ax1.twinx()
+
+        self.plot_trend()
+
+    def plot_trend(self):
+        if not self.history_data:
+            msg = QLabel("Son 7 gün için kayıtlı kilo / ateş verisi bulunamadı.")
+            msg.setAlignment(Qt.AlignCenter)
+            self.layout().addWidget(msg)
+            return
+
+        df = pd.DataFrame(self.history_data)
+        df["date_str"] = df["date"].dt.strftime("%d %b")
+
+        dates = df["date_str"]
+        weights = df["weight"]
+        temps = df["temperature"]
+
+        # Sol eksen: kilo
+        self.ax1.clear()
+        color_w = "tab:blue"
+        self.ax1.set_xlabel("Tarih")
+        self.ax1.set_ylabel("Kilo (kg)", color=color_w, fontsize=11)
+        self.ax1.plot(dates, weights, color=color_w, marker="o", label="Kilo", linewidth=2)
+        self.ax1.tick_params(axis="y", labelcolor=color_w)
+        self.ax1.grid(True, linestyle="--", alpha=0.5)
+
+        # Sağ eksen: ateş
+        self.ax2.clear()
+        color_t = "tab:red"
+        # Sağ eksen etiketini grafiğin SAĞ tarafına al
+        self.ax2.yaxis.set_label_position("right")
+        self.ax2.yaxis.tick_right()
+        self.ax2.set_ylabel("Ateş (°C)", color=color_t, fontsize=11, labelpad=12)
+        self.ax2.plot(dates, temps, color=color_t, marker="s", linestyle="--", label="Ateş", linewidth=2)
+        self.ax2.tick_params(axis="y", labelcolor=color_t)
+        self.ax2.set_ylim(35, 42)
+
+        self.figure.tight_layout()
+        self.canvas.draw()
+
+
+class HealthLogDialog(QDialog):
+    """Seçili hayvan için manuel kilo + ateş ölçümü ekleme."""
+
+    def __init__(self, parent, animal: Animal):
+        super().__init__(parent)
+        self.animal = animal
+        self.result = None
+
+        self.setWindowTitle(f"{animal.isim} - Yeni Ölçüm")
+        self.setMinimumSize(320, 230)
+
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        form = QFormLayout()
+        input_style = "padding: 6px; border: 1px solid #ccc; border-radius: 4px;"
+
+        # Tarih seçimi
+        self.date_edit = QDateEdit(QDate.currentDate())
+        self.date_edit.setDisplayFormat("dd.MM.yyyy")
+        self.date_edit.setCalendarPopup(True)
+        self.date_edit.setStyleSheet(input_style)
+        form.addRow("Tarih:", self.date_edit)
+
+        self.weight_entry = QLineEdit()
+        self.weight_entry.setStyleSheet(input_style)
+        self.weight_entry.setPlaceholderText("Örn: 750.0")
+        self.weight_entry.setValidator(QRegExpValidator(QRegExp(r'^\d+\.?\d*$')))
+        # Mevcut kiloyu varsayılan yap
+        if getattr(animal, "kilo", None):
+            self.weight_entry.setText(str(animal.kilo))
+        form.addRow("Kilo (kg):", self.weight_entry)
+
+        self.temp_entry = QLineEdit()
+        self.temp_entry.setStyleSheet(input_style)
+        self.temp_entry.setPlaceholderText("Örn: 38.5")
+        self.temp_entry.setValidator(QRegExpValidator(QRegExp(r'^\d+\.?\d*$')))
+        if getattr(animal, "temperature", None):
+            self.temp_entry.setText(str(animal.temperature))
+        form.addRow("Vücut Sıcaklığı (°C):", self.temp_entry)
+
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.save)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def save(self):
+        weight_text = self.weight_entry.text().strip()
+        temp_text = self.temp_entry.text().strip()
+
+        weight = float(weight_text) if weight_text else None
+        temperature = float(temp_text) if temp_text else None
+
+        # Tarihi datetime'a çevir (saat 00:00)
+        selected_date = self.date_edit.date().toPyDate()
+        measured_at = datetime.combine(selected_date, datetime.min.time())
+
+        if weight is None and temperature is None:
+            QMessageBox.warning(self, "Uyarı", "En azından kilo veya vücut sıcaklığından birini girmelisiniz.")
+            return
+
+        self.result = {
+            "weight": weight,
+            "temperature": temperature,
+            "measured_at": measured_at,
+        }
+        self.accept()
+
+
 class AnimalDialog(QDialog):
     """Hayvan ekleme/düzenleme dialog penceresi (RFID Entegreli)"""
     
@@ -1034,6 +1601,29 @@ class AnimalDialog(QDialog):
         self.saglik_durumu_entry.setStyleSheet(input_style)
         form_layout.addRow("Sağlık Durumu:", self.saglik_durumu_entry)
         
+        # Vücut Sıcaklığı (°C) - AI Health Monitoring için
+        self.temperature_entry = QLineEdit()
+        temp_value = data.get("temperature", "")
+        self.temperature_entry.setText(str(temp_value) if temp_value else "")
+        self.temperature_entry.setStyleSheet(input_style)
+        self.temperature_entry.setPlaceholderText("Örn: 38.5")
+        # Sadece sayı kabul et (ondalıklı olabilir)
+        temp_validator = QRegExpValidator(QRegExp(r'^\d+\.?\d*$'))
+        self.temperature_entry.setValidator(temp_validator)
+        form_layout.addRow("Vücut Sıcaklığı (°C):", self.temperature_entry)
+        
+        # Profil Kilosu (kg) - AI Health Monitoring için
+        self.baseline_weight_entry = QLineEdit()
+        baseline_value = data.get("baseline_weight", "")
+        self.baseline_weight_entry.setText(str(baseline_value) if baseline_value else "")
+        self.baseline_weight_entry.setStyleSheet(input_style)
+        self.baseline_weight_entry.setPlaceholderText("Kilo kaybı analizi için referans kilo")
+        # Sadece sayı kabul et (ondalıklı olabilir)
+        baseline_validator = QRegExpValidator(QRegExp(r'^\d+\.?\d*$'))
+        self.baseline_weight_entry.setValidator(baseline_validator)
+        form_layout.addRow("Profil Kilosu (kg):", self.baseline_weight_entry)
+        
+        # Notlar
         self.notlar_text = QTextEdit()
         self.notlar_text.setPlainText(data.get("notlar", ""))
         self.notlar_text.setMaximumHeight(80)
@@ -1071,6 +1661,14 @@ class AnimalDialog(QDialog):
         QMessageBox.warning(self, "Hata", msg)
 
     def save(self):
+        """Form verilerini kaydet"""
+        # Temperature ve baseline_weight değerlerini parse et
+        temperature_text = self.temperature_entry.text().strip()
+        temperature = float(temperature_text) if temperature_text else None
+        
+        baseline_weight_text = self.baseline_weight_entry.text().strip()
+        baseline_weight = float(baseline_weight_text) if baseline_weight_text else None
+        
         data = {
             "rfid_tag": self.rfid_entry.text(),
             "isim": self.isim_entry.text(),
@@ -1082,7 +1680,9 @@ class AnimalDialog(QDialog):
             "renk": self.renk_entry.text(),
             "dogum_tarihi": self.dogum_tarihi_entry.text(),
             "saglik_durumu": self.saglik_durumu_entry.text(),
-            "notlar": self.notlar_text.toPlainText()
+            "notlar": self.notlar_text.toPlainText(),
+            "temperature": temperature,
+            "baseline_weight": baseline_weight
         }
         
         is_valid, error_msg = validate_animal_data(data)
