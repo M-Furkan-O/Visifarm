@@ -2,4 +2,7 @@ pyinstaller>=6.0.0
 supabase>=2.0.0
 python-dotenv>=1.0.0
 PyQt5>=5.15.0
+requests>=2.31.0
+urllib3<2.0
+pyserial>=3.5
 

@@ -17,6 +17,9 @@ class Animal:
         self.saglik_durumu = data.get("saglik_durumu", "İyi") if data else "İyi"
         self.notlar = data.get("notlar", "") if data else ""
         self.olusturma_tarihi = data.get("olusturma_tarihi") if data else data.get("created_at") if data else datetime.now().isoformat()
+        
+        # YENİ ALAN: Fotoğraf URL'si
+        self.photo_url = data.get("photo_url") if data else None 
     
     def to_dict(self) -> Dict[str, Any]:
         """Hayvan verisini dictionary'ye çevir"""
@@ -33,9 +36,7 @@ class Animal:
             "dogum_tarihi": self.dogum_tarihi,
             "saglik_durumu": self.saglik_durumu,
             "notlar": self.notlar,
-            "olusturma_tarihi": self.olusturma_tarihi
+            "olusturma_tarihi": self.olusturma_tarihi,
+            # YENİ EKLENEN KISIM:
+            "photo_url": self.photo_url
         }
-    
-    def __str__(self):
-        return f"{self.isim} ({self.tur})"
-

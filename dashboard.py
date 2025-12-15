@@ -1,14 +1,15 @@
 import sys
-import shutil
 from pathlib import Path
+from typing import Dict, Any
 from serial_reader import SerialReader
+import requests
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QMessageBox, QListWidget, 
                              QListWidgetItem, QComboBox, QGroupBox, QGridLayout, QTextEdit,
                              QDialog, QDialogButtonBox, QFormLayout, QFileDialog, QDateEdit,
                              QScrollArea)
-from PyQt5.QtCore import Qt, pyqtSignal, QRegExp, QDate
-from PyQt5.QtGui import QFont, QColor, QRegExpValidator, QPixmap
+from PyQt5.QtCore import Qt, QRegExp, QDate
+from PyQt5.QtGui import QFont, QRegExpValidator, QPixmap
 from database import get_database
 from models.animal import Animal
 from config import APP_CONFIG, ANIMAL_TYPES, GENDERS
@@ -22,6 +23,7 @@ class Dashboard(QMainWindow):
         self.db = get_database()
         self.db.connect()
         self.selected_animal_id = None
+        self.rfid_reader_thread = None  # RFID okuma thread'i için
         
         self.setWindowTitle(f"{APP_CONFIG['title']} - Admin Dashboard")
         self.setMinimumSize(APP_CONFIG['width'], APP_CONFIG['height'])
@@ -118,9 +120,13 @@ class Dashboard(QMainWindow):
         search_label.setStyleSheet("color: #2c3e50;")
         layout.addWidget(search_label)
         
+        # Arama kutusu ve RFID butonu için horizontal layout
+        search_layout = QHBoxLayout()
+        search_layout.setSpacing(8)
+        
         self.search_entry = QLineEdit()
         self.search_entry.setFont(QFont("Arial", 11))
-        self.search_entry.setPlaceholderText("İsim, tür veya renk ara...")
+        self.search_entry.setPlaceholderText("İsim, tür, renk veya RFID ara...")
         self.search_entry.setStyleSheet("""
             QLineEdit {
                 padding: 8px;
@@ -135,7 +141,39 @@ class Dashboard(QMainWindow):
             }
         """)
         self.search_entry.textChanged.connect(self.on_search)
-        layout.addWidget(self.search_entry)
+        search_layout.addWidget(self.search_entry, 1)
+        
+        # RFID okuma butonu
+        self.rfid_search_btn = QPushButton("📡 RFID Oku")
+        self.rfid_search_btn.setFont(QFont("Arial", 10))
+        self.rfid_search_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                padding: 8px 15px;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+                min-width: 100px;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+            QPushButton:pressed {
+                background-color: #21618c;
+            }
+            QPushButton:disabled {
+                background-color: #95a5a6;
+                color: #ecf0f1;
+            }
+        """)
+        self.rfid_search_btn.clicked.connect(self.start_rfid_search)
+        search_layout.addWidget(self.rfid_search_btn)
+        
+        layout.addLayout(search_layout)
+        
+        # RFID reader thread için değişken
+        self.rfid_reader_thread = None
         
         # Filtreler
         filter_group = QGroupBox("Filtreler")
@@ -333,7 +371,6 @@ class Dashboard(QMainWindow):
         self.detail_layout = QVBoxLayout()
         self.detail_widget.setLayout(self.detail_layout)
         
-        from PyQt5.QtWidgets import QScrollArea
         scroll = QScrollArea()
         scroll.setWidget(self.detail_widget)
         scroll.setWidgetResizable(True)
@@ -363,6 +400,57 @@ class Dashboard(QMainWindow):
         filters = self.get_filters()
         results = self.db.search_animals(query, filters)
         self.load_animal_list(results)
+    
+    def start_rfid_search(self):
+        """RFID okuma işlemini başlat"""
+        # Eğer zaten bir okuma işlemi varsa durdur
+        if self.rfid_reader_thread and self.rfid_reader_thread.isRunning():
+            self.rfid_reader_thread.stop()
+            self.rfid_reader_thread.wait()
+        
+        # Butonu devre dışı bırak
+        self.rfid_search_btn.setEnabled(False)
+        self.rfid_search_btn.setText("Okunuyor...")
+        
+        # Yeni reader thread oluştur
+        self.rfid_reader_thread = SerialReader()
+        self.rfid_reader_thread.rfid_read.connect(self.on_rfid_search_found)
+        self.rfid_reader_thread.error_occurred.connect(self.on_rfid_search_error)
+        self.rfid_reader_thread.start()
+    
+    def on_rfid_search_found(self, rfid_id):
+        """RFID okunduğunda arama kutusuna yaz ve ara"""
+        # Thread'i durdur
+        if self.rfid_reader_thread:
+            self.rfid_reader_thread.stop()
+            self.rfid_reader_thread.wait()
+            self.rfid_reader_thread = None
+        
+        # Butonu tekrar aktif et
+        self.rfid_search_btn.setEnabled(True)
+        self.rfid_search_btn.setText("📡 RFID Oku")
+        
+        # RFID'yi arama kutusuna yaz (otomatik arama yapılacak textChanged signal ile)
+        self.search_entry.setText(rfid_id)
+        self.search_entry.setFocus()
+        
+        # Başarı mesajı
+        QMessageBox.information(self, "RFID Okundu", f"RFID: {rfid_id}\nArama yapılıyor...")
+    
+    def on_rfid_search_error(self, error_msg):
+        """RFID okuma hatası"""
+        # Thread'i durdur
+        if self.rfid_reader_thread:
+            self.rfid_reader_thread.stop()
+            self.rfid_reader_thread.wait()
+            self.rfid_reader_thread = None
+        
+        # Butonu tekrar aktif et
+        self.rfid_search_btn.setEnabled(True)
+        self.rfid_search_btn.setText("📡 RFID Oku")
+        
+        # Hata mesajı
+        QMessageBox.warning(self, "RFID Okuma Hatası", error_msg)
     
     def on_filter(self):
         """Filtre uygula"""
@@ -553,68 +641,87 @@ class Dashboard(QMainWindow):
         )
 
         if reply == QMessageBox.Yes:
+            # RFID thread'i durdur
+            if hasattr(self, "rfid_reader_thread") and self.rfid_reader_thread:
+                if self.rfid_reader_thread.isRunning():
+                    self.rfid_reader_thread.stop()
+                    self.rfid_reader_thread.wait()
+            
             if hasattr(self, "db") and self.db:
                 self.db.disconnect()
             self.close()
             if callable(self.on_logout):
                 self.on_logout()
     
-    def run(self):
-        self.show()
+
 
 
 class PhotoDialog(QDialog):
-    """Seçili hayvanın fotoğraflarını yönetmek için pencere."""
-    
-    def __init__(self, parent, animal: Animal):
+    def __init__(self, parent, animal):
         super().__init__(parent)
         self.animal = animal
+        # Parent'tan veritabanı bağlantısını al
+        self.db = parent.db if hasattr(parent, 'db') else None
         self.setWindowTitle(f"{animal.isim} - Fotoğraflar")
         self.setMinimumSize(800, 600)
         
-        self.photos_root = Path("data/photos")
-        self.animal_dir = self.photos_root / (animal.id or "unknown")
-        self.animal_dir.mkdir(parents=True, exist_ok=True)
-        
+        # Fotoğraflar artık sadece Supabase'de tutulacak
         self.photos_by_date = {}
         self._init_ui()
         self.load_photos()
-    
+
     def _init_ui(self):
         main_layout = QHBoxLayout()
         self.setLayout(main_layout)
-        
-        # Tarih listesi
+
+        # Sol panel (tarih listesi)
         left_layout = QVBoxLayout()
-        dates_label = QLabel("Tarihler")
-        dates_label.setFont(QFont("Arial", 12, QFont.Bold))
-        left_layout.addWidget(dates_label)
+        date_label = QLabel("Tarihler:")
+        date_label.setFont(QFont("Arial", 11, QFont.Bold))
+        left_layout.addWidget(date_label)
         
         self.date_list = QListWidget()
+        self.date_list.setStyleSheet("""
+            QListWidget {
+                border: 2px solid #ddd;
+                border-radius: 4px;
+                background-color: #fafafa;
+            }
+            QListWidget::item {
+                padding: 8px;
+                border-bottom: 1px solid #ecf0f1;
+            }
+            QListWidget::item:selected {
+                background-color: #3498db;
+                color: white;
+            }
+            QListWidget::item:hover {
+                background-color: #e8f4f8;
+            }
+        """)
         self.date_list.itemClicked.connect(self.on_date_selected)
         left_layout.addWidget(self.date_list, 1)
-        main_layout.addLayout(left_layout, 1)
         
+        left_widget = QWidget()
+        left_widget.setFixedWidth(200)
+        left_widget.setLayout(left_layout)
+        main_layout.addWidget(left_widget)
+
         # Sağ panel (ekle ve görüntüle)
         right_layout = QVBoxLayout()
-        
+
         control_layout = QHBoxLayout()
         self.date_input = QDateEdit(QDate.currentDate())
         self.date_input.setDisplayFormat("dd.MM.yyyy")
         self.date_input.setCalendarPopup(True)
         control_layout.addWidget(QLabel("Tarih:"))
         control_layout.addWidget(self.date_input)
-        
+
         add_btn = QPushButton("Fotoğraf Ekle")
         add_btn.clicked.connect(self.add_photo)
-        add_btn.setStyleSheet("""
-            QPushButton { background-color: #27ae60; color: white; padding: 8px 12px;
-                           border: none; border-radius: 4px; font-weight: bold; }
-            QPushButton:hover { background-color: #229954; }
-        """)
         control_layout.addWidget(add_btn)
         right_layout.addLayout(control_layout)
-        
+
         self.photos_scroll = QScrollArea()
         self.photos_scroll.setWidgetResizable(True)
         self.photo_container = QWidget()
@@ -623,25 +730,75 @@ class PhotoDialog(QDialog):
         self.photo_container.setLayout(self.photo_layout)
         self.photos_scroll.setWidget(self.photo_container)
         right_layout.addWidget(self.photos_scroll, 1)
-        
+
         main_layout.addLayout(right_layout, 2)
-    
+
+    def add_photo(self):
+        """Fotoğraf ekleme dialogunu aç ve sadece Supabase'e yükle"""
+        if not self.db or not self.animal.id:
+            QMessageBox.warning(self, "Uyarı", "Veritabanı bağlantısı yok veya hayvan ID'si bulunamadı!")
+            return
+        
+        selected_date = self.date_input.date().toString("yyyy-MM-dd")
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Fotoğraf Seç",
+            "",
+            "Resim Dosyaları (*.jpg *.jpeg *.png *.bmp *.gif);;Tüm Dosyalar (*)"
+        )
+        
+        if file_path:
+            # Dosya adını oluştur: yyyy-MM-dd_originalname.jpg
+            source_path = Path(file_path)
+            date_prefix = selected_date
+            new_filename = f"{date_prefix}_{source_path.name}"
+            
+            try:
+                # Sadece Supabase'e yükle (yerel dosyaya kaydetme)
+                photo_url = self.db.upload_photo(
+                    animal_id=str(self.animal.id),
+                    local_file_path=source_path,
+                    filename=new_filename
+                )
+                
+                if photo_url:
+                    QMessageBox.information(self, "Başarılı", f"Fotoğraf Supabase'e yüklendi!")
+                    # Fotoğrafları yeniden yükle
+                    self.load_photos()
+                    # Eklenen tarihi seç
+                    self._select_date(selected_date)
+                else:
+                    QMessageBox.critical(self, "Hata", "Fotoğraf Supabase'e yüklenemedi!")
+                    
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", f"Fotoğraf eklenirken hata oluştu: {str(e)}")
+
     def load_photos(self):
-        """Klasörden fotoğrafları oku ve tarihe göre grupla."""
+        """Supabase'den fotoğrafları yükle ve tarihe göre grupla."""
         self.photos_by_date = {}
-        if not self.animal_dir.exists():
-            self.animal_dir.mkdir(parents=True, exist_ok=True)
         
-        for img_path in self.animal_dir.iterdir():
-            if not img_path.is_file():
-                continue
-            date_iso = self._extract_date(img_path.name)
-            self.photos_by_date.setdefault(date_iso, []).append(img_path)
+        if not self.db or not self.animal.id:
+            self._populate_dates()
+            return
         
-        for paths in self.photos_by_date.values():
-            paths.sort()
-        
-        self._populate_dates()
+        try:
+            # Supabase'den fotoğraf listesini al
+            photos = self.db.list_photos(str(self.animal.id))
+            
+            # Fotoğrafları tarihe göre grupla
+            for photo in photos:
+                date_iso = photo.get('date') or self._extract_date(photo.get('name', ''))
+                if date_iso not in self.photos_by_date:
+                    self.photos_by_date[date_iso] = []
+                self.photos_by_date[date_iso].append(photo)
+            
+            # Tarihleri doldur
+            self._populate_dates()
+        except Exception as e:
+            print(f"Fotoğraf yükleme hatası: {e}")
+            QMessageBox.warning(self, "Uyarı", f"Fotoğraflar yüklenirken hata oluştu: {str(e)}")
+            self._populate_dates()
     
     def _extract_date(self, filename: str) -> str:
         """Dosya adından ISO tarih çıkar (yyyy-MM-dd), yoksa bugünün tarihi."""
@@ -669,7 +826,7 @@ class PhotoDialog(QDialog):
         self.show_photos_for(date_iso)
     
     def show_photos_for(self, date_iso: str):
-        """Seçili tarihe ait fotoğrafları ekrana bas."""
+        """Seçili tarihe ait fotoğrafları ekrana bas (Supabase URL'lerinden)."""
         while self.photo_layout.count():
             child = self.photo_layout.takeAt(0)
             if child.widget():
@@ -681,41 +838,65 @@ class PhotoDialog(QDialog):
             self.photo_layout.addWidget(empty_label)
             return
         
-        for img_path in self.photos_by_date[date_iso]:
+        for photo_info in self.photos_by_date[date_iso]:
+            # Her fotoğraf için bir container widget oluştur
+            photo_widget = QWidget()
+            photo_container_layout = QVBoxLayout()
+            photo_widget.setLayout(photo_container_layout)
+            photo_container_layout.setContentsMargins(8, 8, 8, 8)
+            photo_container_layout.setSpacing(5)
+            
+            # Fotoğraf (URL'den yükle)
             img_label = QLabel()
-            pixmap = QPixmap(str(img_path))
-            if not pixmap.isNull():
-                img_label.setPixmap(pixmap.scaledToWidth(350, Qt.SmoothTransformation))
+            photo_url = photo_info.get('url', '')
+            photo_name = photo_info.get('name', 'Bilinmeyen')
+            
+            if photo_url:
+                try:
+                    # URL'den fotoğrafı indir
+                    response = requests.get(photo_url, timeout=10)
+                    if response.status_code == 200:
+                        pixmap = QPixmap()
+                        pixmap.loadFromData(response.content)
+                        if not pixmap.isNull():
+                            img_label.setPixmap(pixmap.scaledToWidth(350, Qt.SmoothTransformation))
+                        else:
+                            img_label.setText(f"Görüntü yüklenemedi: {photo_name}")
+                    else:
+                        img_label.setText(f"Fotoğraf indirilemedi: {photo_name}")
+                except Exception as e:
+                    img_label.setText(f"Hata: {photo_name}\n{str(e)}")
             else:
-                img_label.setText(f"Görüntülenemedi: {img_path.name}")
-            img_label.setStyleSheet("padding: 8px;")
-            self.photo_layout.addWidget(img_label)
-    
-    def add_photo(self):
-        """Yeni fotoğraf ekle ve dosyayı ilgili klasöre kopyala."""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Fotoğraf Seç",
-            "",
-            "Resimler (*.png *.jpg *.jpeg *.bmp *.gif)"
-        )
-        if not file_path:
-            return
-        
-        date_iso = self.date_input.date().toString("yyyy-MM-dd")
-        src_path = Path(file_path)
-        dest_name = f"{date_iso}_{src_path.name}"
-        dest_path = self.animal_dir / dest_name
-        
-        counter = 1
-        while dest_path.exists():
-            dest_path = self.animal_dir / f"{date_iso}_{counter}_{src_path.name}"
-            counter += 1
-        
-        shutil.copy(src_path, dest_path)
-        self.load_photos()
-        self._select_date(date_iso)
-    
+                img_label.setText(f"URL bulunamadı: {photo_name}")
+            
+            img_label.setStyleSheet("padding: 4px; background-color: #f0f0f0; border-radius: 4px;")
+            img_label.setAlignment(Qt.AlignCenter)
+            photo_container_layout.addWidget(img_label)
+            
+            # Silme butonu
+            delete_btn = QPushButton("🗑️ Sil")
+            delete_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #e74c3c;
+                    color: white;
+                    padding: 6px;
+                    border: none;
+                    border-radius: 4px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #c0392b;
+                }
+                QPushButton:pressed {
+                    background-color: #a93226;
+                }
+            """)
+            delete_btn.clicked.connect(lambda checked, info=photo_info: self.delete_photo(info))
+            photo_container_layout.addWidget(delete_btn)
+            
+            # Container'ı ana layout'a ekle
+            self.photo_layout.addWidget(photo_widget)
+            
     def _select_date(self, date_iso: str):
         for i in range(self.date_list.count()):
             item = self.date_list.item(i)
@@ -723,6 +904,43 @@ class PhotoDialog(QDialog):
                 self.date_list.setCurrentRow(i)
                 self.show_photos_for(date_iso)
                 break
+    
+    def delete_photo(self, photo_info: Dict[str, Any]):
+        """Fotoğrafı sadece Supabase'den sil"""
+        if not self.db or not self.animal.id:
+            QMessageBox.warning(self, "Uyarı", "Veritabanı bağlantısı yok!")
+            return
+        
+        filename = photo_info.get('name', 'Bilinmeyen')
+        
+        # Onay mesajı
+        reply = QMessageBox.question(
+            self,
+            "Fotoğraf Sil",
+            f"'{filename}' adlı fotoğrafı silmek istediğinize emin misiniz?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply != QMessageBox.Yes:
+            return
+        
+        try:
+            # Sadece Supabase'den sil
+            success = self.db.delete_photo(
+                animal_id=str(self.animal.id),
+                filename=filename
+            )
+            
+            if success:
+                QMessageBox.information(self, "Başarılı", "Fotoğraf başarıyla silindi!")
+                # Fotoğrafları yeniden yükle
+                self.load_photos()
+            else:
+                QMessageBox.critical(self, "Hata", "Fotoğraf silinemedi!")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"Fotoğraf silinirken hata oluştu: {str(e)}")
 
 
 class AnimalDialog(QDialog):

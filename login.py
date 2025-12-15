@@ -2,7 +2,7 @@ import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QLabel, QLineEdit, QPushButton, QMessageBox, QHBoxLayout)
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtGui import QFont
 from config import USERS, APP_CONFIG
 
 class LoginWindow(QMainWindow):
@@ -158,7 +158,6 @@ class LoginWindow(QMainWindow):
         
         # İlk focus
         self.username_entry.setFocus()
-        self.password_visible = False
     
     def toggle_password_visibility(self):
         """Şifre görünürlüğünü değiştir"""
@@ -180,5 +179,3 @@ class LoginWindow(QMainWindow):
             QMessageBox.critical(self, "Hata", "Kullanıcı adı veya şifre hatalı!")
             self.password_entry.clear()
     
-    def run(self):
-        self.show()

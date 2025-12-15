@@ -1,8 +1,6 @@
 import json
-import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from datetime import datetime
 import uuid
 
 from database.base_db import BaseDatabase
@@ -93,14 +91,15 @@ class LocalDatabase(BaseDatabase):
         """Hayvan ara ve filtrele"""
         results = self.data.copy()
         
-        # Metin araması
+        # Metin araması (isim, tür, renk ve RFID)
         if query:
             query_lower = query.lower()
             results = [
                 item for item in results
                 if query_lower in item.get("isim", "").lower() or
                    query_lower in item.get("tur", "").lower() or
-                   query_lower in item.get("renk", "").lower()
+                   query_lower in item.get("renk", "").lower() or
+                   query_lower in str(item.get("rfid_tag", "")).lower()
             ]
         
         # Filtreleme
@@ -114,3 +113,23 @@ class LocalDatabase(BaseDatabase):
         
         return [Animal(item) for item in results]
 
+    def upload_photo(self, animal_id: str, local_file_path: Path, filename: str) -> Optional[str]:
+        """
+        Yerel veritabanı için yer tutucu: Dosyayı yüklemez, sadece yerel yolu döndürür.
+        """
+        # Burada dosya zaten yerel olarak kaydedilmiştir.
+        return str(local_file_path)
+    
+    def delete_photo(self, animal_id: str, filename: str) -> bool:
+        """
+        Yerel veritabanı için: Dosya silme işlemi PhotoDialog'da yapılacak.
+        """
+        # Yerel dosya silme işlemi PhotoDialog'da yapılıyor
+        return True
+    
+    def list_photos(self, animal_id: str) -> List[Dict[str, Any]]:
+        """
+        Yerel veritabanı için: Fotoğraflar yerel dosya sisteminden okunacak.
+        """
+        # PhotoDialog'da yerel dosya sistemi kullanılıyor
+        return []
