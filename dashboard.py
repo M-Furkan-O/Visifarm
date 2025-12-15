@@ -65,14 +65,14 @@ class Dashboard(QMainWindow):
         header_layout.setContentsMargins(20, 0, 20, 0)
         
         title_label = QLabel(APP_CONFIG['title'])
-        title_label.setFont(QFont("", 18, QFont.Bold))
+        title_label.setFont(QFont("Arial", 18, QFont.Bold))
         title_label.setStyleSheet("color: white;")
         header_layout.addWidget(title_label)
         
         header_layout.addStretch()
         
         user_label = QLabel(f"Hoş geldiniz, {self.username}")
-        user_label.setFont(QFont("", 12))
+        user_label.setFont(QFont("Arial", 12))
         user_label.setStyleSheet("color: white; margin-right: 15px;")
         header_layout.addWidget(user_label)
 
@@ -123,7 +123,7 @@ class Dashboard(QMainWindow):
         
         # Arama bölümü
         search_label = QLabel("Ara:")
-        search_label.setFont(QFont("", 11, QFont.Bold))
+        search_label.setFont(QFont("Arial", 11, QFont.Bold))
         search_label.setStyleSheet("color: #2c3e50;")
         layout.addWidget(search_label)
         
@@ -132,7 +132,7 @@ class Dashboard(QMainWindow):
         search_layout.setSpacing(8)
         
         self.search_entry = QLineEdit()
-        self.search_entry.setFont(QFont("", 11))
+        self.search_entry.setFont(QFont("Arial", 11))
         self.search_entry.setPlaceholderText("İsim, tür, renk veya RFID ara...")
         self.search_entry.setStyleSheet("""
             QLineEdit {
@@ -152,7 +152,7 @@ class Dashboard(QMainWindow):
         
         # RFID okuma butonu
         self.rfid_search_btn = QPushButton("📡 RFID Oku")
-        self.rfid_search_btn.setFont(QFont("", 10))
+        self.rfid_search_btn.setFont(QFont("Arial", 10))
         self.rfid_search_btn.setStyleSheet("""
             QPushButton {
                 background-color: #3498db;
@@ -184,7 +184,7 @@ class Dashboard(QMainWindow):
         
         # Filtreler
         filter_group = QGroupBox("Filtreler")
-        filter_group.setFont(QFont("", 11, QFont.Bold))
+        filter_group.setFont(QFont("Arial", 11, QFont.Bold))
         filter_group.setStyleSheet("""
             QGroupBox {
                 border: 2px solid #ecf0f1;
@@ -204,7 +204,7 @@ class Dashboard(QMainWindow):
         
         # Tür filtresi
         type_label = QLabel("Tür:")
-        type_label.setFont(QFont("", 10))
+        type_label.setFont(QFont("Arial", 10))
         type_label.setStyleSheet("color: #34495e;")
         filter_layout.addWidget(type_label)
         
@@ -230,7 +230,7 @@ class Dashboard(QMainWindow):
         
         # Cinsiyet filtresi
         gender_label = QLabel("Cinsiyet:")
-        gender_label.setFont(QFont("", 10))
+        gender_label.setFont(QFont("Arial", 10))
         gender_label.setStyleSheet("color: #34495e;")
         filter_layout.addWidget(gender_label)
         
@@ -258,13 +258,13 @@ class Dashboard(QMainWindow):
         
         # Liste başlığı
         list_label = QLabel("Hayvan Listesi")
-        list_label.setFont(QFont("", 14, QFont.Bold))
+        list_label.setFont(QFont("Arial", 14, QFont.Bold))
         list_label.setStyleSheet("color: #2c3e50; padding-top: 5px;")
         layout.addWidget(list_label)
         
         # Hayvan listesi
         self.animal_list = QListWidget()
-        self.animal_list.setFont(QFont("", 11))
+        self.animal_list.setFont(QFont("Arial", 11))
         self.animal_list.setStyleSheet("""
             QListWidget {
                 border: 2px solid #ecf0f1;
@@ -294,7 +294,7 @@ class Dashboard(QMainWindow):
         button_layout.setSpacing(8)
         
         add_btn = QPushButton("+ Yeni Hayvan")
-        add_btn.setFont(QFont("", 11, QFont.Bold))
+        add_btn.setFont(QFont("Arial", 11, QFont.Bold))
         add_btn.setStyleSheet("""
             QPushButton {
                 background-color: #27ae60;
@@ -314,7 +314,7 @@ class Dashboard(QMainWindow):
         button_layout.addWidget(add_btn)
         
         edit_btn = QPushButton("✏️ Düzenle")
-        edit_btn.setFont(QFont("", 11))
+        edit_btn.setFont(QFont("Arial", 11))
         edit_btn.setStyleSheet("""
             QPushButton {
                 background-color: #3498db;
@@ -336,7 +336,7 @@ class Dashboard(QMainWindow):
         button_layout.addWidget(edit_btn)
         
         delete_btn = QPushButton("🗑️ Sil")
-        delete_btn.setFont(QFont("", 11))
+        delete_btn.setFont(QFont("Arial", 11))
         delete_btn.setStyleSheet("""
             QPushButton {
                 background-color: #e74c3c;
@@ -370,7 +370,7 @@ class Dashboard(QMainWindow):
         
         # Başlık
         detail_label = QLabel("Hayvan Detayları")
-        detail_label.setFont(QFont("", 14, QFont.Bold))
+        detail_label.setFont(QFont("Arial", 14, QFont.Bold))
         layout.addWidget(detail_label)
         
         # Detay alanı (scrollable)
@@ -396,7 +396,7 @@ class Dashboard(QMainWindow):
         
         self.animal_list.clear()
         for animal in animals:
-            # Önce sağlık analizini yap (ikon ve renk için kullanacağız)
+            # Önce sağlık analizini yap
             try:
                 temp = getattr(animal, "temperature", None)
                 current_weight = float(animal.kilo) if animal.kilo else None
@@ -405,26 +405,19 @@ class Dashboard(QMainWindow):
             except Exception:
                 status = "GOOD"
 
-            # Duruma göre isim başına ikon ekle
-            prefix = ""
+            # İkonu durumuna göre belirle
+            prefix_icon = ""
             if status == "CRITICAL":
-                prefix = "🔴 "
+                prefix_icon = "🔴 "
             elif status == "WARNING":
-                prefix = "🟡 "
+                prefix_icon = "🟡 "
 
-            item_text = f"{prefix}{animal.isim} - {animal.tur} ({animal.cinsiyet})"
+            # Liste metnini oluştur
+            item_text = f"{prefix_icon}{animal.isim} - {animal.tur} ({animal.cinsiyet})"
             item = QListWidgetItem(item_text)
             item.setData(Qt.UserRole, animal.id)
 
-            # Sağlık analizine göre satır rengini ayarla (AI HealthAnalyzer)
-            try:
-                temp = getattr(animal, "temperature", None)
-                current_weight = float(animal.kilo) if animal.kilo else None
-                analysis = HealthAnalyzer.analyze_health(animal, temp, current_weight)
-                status = analysis.get("health_status", "GOOD")
-            except Exception:
-                status = "GOOD"
-
+            # Satır rengini de durumuna göre ayarla
             if status == "CRITICAL":
                 # Kırmızı tonlar
                 item.setBackground(QColor("#ffebee"))   # çok açık kırmızı
@@ -526,7 +519,7 @@ class Dashboard(QMainWindow):
         self.clear_details()
         
         welcome_label = QLabel("Lütfen listeden bir hayvan seçin veya yeni hayvan ekleyin")
-        welcome_label.setFont(QFont("", 12))
+        welcome_label.setFont(QFont("Arial", 12))
         welcome_label.setStyleSheet("color: #7f8c8d;")
         welcome_label.setAlignment(Qt.AlignCenter)
         self.detail_layout.addWidget(welcome_label)
@@ -556,14 +549,14 @@ class Dashboard(QMainWindow):
         name_layout.setContentsMargins(15, 10, 15, 10)
         
         name_label = QLabel(f"🐄 {animal.isim}")
-        name_label.setFont(QFont("", 22, QFont.Bold))
+        name_label.setFont(QFont("Arial", 22, QFont.Bold))
         name_label.setStyleSheet("color: white; background: transparent;")
         name_layout.addWidget(name_label)
         name_layout.addStretch()
         
         # Sağlık durumu badge'i (sağ üstte)
         health_badge = QLabel()
-        health_badge.setFont(QFont("", 11, QFont.Bold))
+        health_badge.setFont(QFont("Arial", 11, QFont.Bold))
         health_badge.setAlignment(Qt.AlignCenter)
         # Boyutu Qt'ya bırak, sadece minimum genişlik ver
         health_badge.setMinimumWidth(110)
@@ -608,7 +601,7 @@ class Dashboard(QMainWindow):
         if health_analysis["alerts"]:
             # Başlık - Daha belirgin
             alerts_title = QLabel("⚠️ Sağlık Uyarıları")
-            alerts_title.setFont(QFont("", 14, QFont.Bold))
+            alerts_title.setFont(QFont("Arial", 14, QFont.Bold))
             alerts_title.setStyleSheet("color: #2c3e50; padding: 10px 0px 5px 0px;")
             self.detail_layout.addWidget(alerts_title)
             
@@ -651,7 +644,7 @@ class Dashboard(QMainWindow):
                         )
                     else:
                         icon_label.setText("🌡️")
-                        icon_label.setFont(QFont("", 18))
+                        icon_label.setFont(QFont("Arial", 18))
                 # Kilo kaybı uyarılarında özel ikon kullan
                 elif icon_text in ("⚖️",):
                     pix = QPixmap("assets/kilo_kayip.png")
@@ -661,16 +654,16 @@ class Dashboard(QMainWindow):
                         )
                     else:
                         icon_label.setText("⚖️")
-                        icon_label.setFont(QFont("", 18))
+                        icon_label.setFont(QFont("Arial", 18))
                 else:
                     icon_label.setText(icon_text)
-                    icon_label.setFont(QFont("", 18))
+                    icon_label.setFont(QFont("Arial", 18))
 
                 alert_layout.addWidget(icon_label)
                 
                 # Mesaj (sağ tarafta, tek satır kalın metin)
                 message_label = QLabel(alert["message"])
-                message_label.setFont(QFont("", 11, QFont.Bold))
+                message_label.setFont(QFont("Arial", 11, QFont.Bold))
                 message_label.setStyleSheet(f"color: {text_color}; background: transparent;")
                 message_label.setWordWrap(True)
                 message_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -682,7 +675,7 @@ class Dashboard(QMainWindow):
         
         # Detay bilgileri - Modern kart tasarımı
         details_title = QLabel("📋 Hayvan Bilgileri")
-        details_title.setFont(QFont("", 14, QFont.Bold))
+        details_title.setFont(QFont("Arial", 14, QFont.Bold))
         details_title.setStyleSheet("color: #2c3e50; padding: 15px 0px 10px 0px;")
         self.detail_layout.addWidget(details_title)
         
@@ -757,13 +750,13 @@ class Dashboard(QMainWindow):
             
             # Label
             label_widget = QLabel(label)
-            label_widget.setFont(QFont("", 10))
+            label_widget.setFont(QFont("Arial", 10))
             label_widget.setStyleSheet("color: #7f8c8d; background: transparent;")
             item_layout.addWidget(label_widget)
             
             # Value
             value_widget = QLabel(value)
-            value_widget.setFont(QFont("", 13, QFont.Bold))
+            value_widget.setFont(QFont("Arial", 13, QFont.Bold))
             # Sağlık durumu için özel renk
             if "Sağlık Durumu" in label:
                 value_widget.setStyleSheet(f"""
@@ -794,7 +787,7 @@ class Dashboard(QMainWindow):
         if animal.notlar:
             self.detail_layout.addSpacing(15)
             notes_title = QLabel("📝 Notlar")
-            notes_title.setFont(QFont("", 14, QFont.Bold))
+            notes_title.setFont(QFont("Arial", 14, QFont.Bold))
             notes_title.setStyleSheet("color: #2c3e50; padding: 10px 0px 5px 0px;")
             self.detail_layout.addWidget(notes_title)
             
@@ -812,7 +805,7 @@ class Dashboard(QMainWindow):
             notes_layout.setContentsMargins(10, 10, 10, 10)
             
             notes_text = QLabel(animal.notlar)
-            notes_text.setFont(QFont("", 11))
+            notes_text.setFont(QFont("Arial", 11))
             notes_text.setWordWrap(True)
             notes_text.setStyleSheet("color: #2c3e50; background: transparent; padding: 5px;")
             notes_layout.addWidget(notes_text)
@@ -827,7 +820,7 @@ class Dashboard(QMainWindow):
         button_layout.setContentsMargins(0, 0, 0, 0)
         
         photos_btn = QPushButton("📷 Fotoğrafları Görüntüle")
-        photos_btn.setFont(QFont("", 12, QFont.Bold))
+        photos_btn.setFont(QFont("Arial", 12, QFont.Bold))
         photos_btn.setCursor(Qt.PointingHandCursor)
         photos_btn.setStyleSheet("""
             QPushButton {
@@ -851,7 +844,7 @@ class Dashboard(QMainWindow):
 
         # 7 günlük sağlık grafiği butonu
         trend_btn = QPushButton("📈 7 Günlük Sağlık Grafiği")
-        trend_btn.setFont(QFont("", 12, QFont.Bold))
+        trend_btn.setFont(QFont("Arial", 12, QFont.Bold))
         trend_btn.setCursor(Qt.PointingHandCursor)
         trend_btn.setStyleSheet("""
             QPushButton {
@@ -875,7 +868,7 @@ class Dashboard(QMainWindow):
 
         # Manuel ölçüm ekleme butonu
         log_btn = QPushButton("➕ Ölçüm Ekle")
-        log_btn.setFont(QFont("", 12, QFont.Bold))
+        log_btn.setFont(QFont("Arial", 12, QFont.Bold))
         log_btn.setCursor(Qt.PointingHandCursor)
         log_btn.setStyleSheet("""
             QPushButton {
@@ -1099,7 +1092,7 @@ class PhotoDialog(QDialog):
         # Sol panel (tarih listesi)
         left_layout = QVBoxLayout()
         date_label = QLabel("Tarihler:")
-        date_label.setFont(QFont("", 11, QFont.Bold))
+        date_label.setFont(QFont("Arial", 11, QFont.Bold))
         left_layout.addWidget(date_label)
         
         self.date_list = QListWidget()

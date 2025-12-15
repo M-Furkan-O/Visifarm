@@ -1,9 +1,5 @@
 import sys
-from pathlib import Path
-
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtGui import QFontDatabase, QFont
-
 from login import LoginWindow
 from dashboard import Dashboard
 
@@ -48,19 +44,6 @@ def main():
     global login_window
     
     app = QApplication(sys.argv)
-
-    # Uygulama genelinde Roboto Slab fontunu kullan
-    try:
-        font_path = Path("assets/fonts/RobotoSlab.ttf")
-        if font_path.exists():
-            font_id = QFontDatabase.addApplicationFont(str(font_path))
-            families = QFontDatabase.applicationFontFamilies(font_id)
-            if families:
-                roboto_family = families[0]
-                app.setFont(QFont(roboto_family, 11))
-    except Exception as e:
-        # Font yüklenemezse sessizce geç, varsayılan font kullanılır
-        print(f"Font yükleme hatası: {e}")
     
     login_window = LoginWindow(start_dashboard)
     login_window.show()
