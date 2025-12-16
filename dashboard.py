@@ -431,6 +431,7 @@ class Dashboard(QMainWindow):
             key=lambda a: ((a.tur or "").lower(), (a.isim or "").lower()),
         )
 
+        # Listeyi temizle
         self.animal_list.clear()
         current_type = None
 
@@ -440,13 +441,17 @@ class Dashboard(QMainWindow):
             # Yeni bir tür grubuna geçiyorsak başlık ekle
             if animal_type != current_type:
                 current_type = animal_type
-                header_item = QListWidgetItem(f"  {current_type}")
+
+                # Başlangıçta tüm gruplar kapalı: ok sağa bakan (▶)
+                header_item = QListWidgetItem(f"▶ {current_type}")
                 header_font = header_item.font()
                 header_font.setBold(True)
                 header_item.setFont(header_font)
                 # Başlık seçilebilir ama tıklanınca sadece grubu aç/kapa yapar
                 header_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
-                header_item.setData(Qt.UserRole, f"header:{animal_type}")
+                # Başlık olduğunu ve hangi tür olduğunu işaretle
+                header_item.setData(Qt.UserRole, "HEADER")
+                header_item.setData(Qt.UserRole + 1, animal_type)  # Tür bilgisi
                 header_item.setBackground(QColor("#F5F5F5"))
                 header_item.setForeground(QColor("#3E2C1C"))
                 self.animal_list.addItem(header_item)
@@ -470,7 +475,9 @@ class Dashboard(QMainWindow):
             # Liste metnini oluştur
             item_text = f"{prefix_icon}{animal.isim} - {animal_type} ({animal.cinsiyet})"
             item = QListWidgetItem(item_text)
-            item.setData(Qt.UserRole, animal.id)
+            item.setData(Qt.UserRole, animal.id)  # Hayvan ID'si
+            item.setData(Qt.UserRole + 1, animal_type)  # Hangi türe ait
+            item.setData(Qt.UserRole + 2, "CHILD")  # Bu bir çocuk öğe (hayvan)
 
             # Satır rengini de durumuna göre ayarla
             if status == "CRITICAL":
@@ -486,9 +493,8 @@ class Dashboard(QMainWindow):
                 font.setBold(True)
                 item.setFont(font)
 
-            # Grup kapalıysa bu öğeyi gizle
-            if self.group_states.get(animal_type, False):
-                item.setHidden(True)
+            # İlk yüklemede tüm gruplar kapalı: tüm hayvanları gizle
+            item.setHidden(True)
 
             self.animal_list.addItem(item)
     
@@ -565,27 +571,42 @@ class Dashboard(QMainWindow):
     
     def on_animal_select(self, item):
         """Hayvan seçildiğinde"""
-        data = item.data(Qt.UserRole)
+        role = item.data(Qt.UserRole)
 
-        # Tür başlığına tıklandıysa o grubun açık/kapalı durumunu değiştir
-        if isinstance(data, str) and data.startswith("header:"):
-            animal_type = data.split("header:", 1)[1]
-            collapsed = self.group_states.get(animal_type, False)
-            new_state = not collapsed
-            self.group_states[animal_type] = new_state
+        # Eğer bu bir BAŞLIK ise (UserRole = "HEADER")
+        if role == "HEADER":
+            group_type = item.data(Qt.UserRole + 1)  # Hangi tür? (Örn: İnek)
+            current_text = item.text()
 
-            row = self.animal_list.row(item) + 1
-            while row < self.animal_list.count():
-                child = self.animal_list.item(row)
-                child_data = child.data(Qt.UserRole)
-                # Sonraki başlığa gelince dur
-                if isinstance(child_data, str) and child_data.startswith("header:"):
-                    break
-                child.setHidden(new_state)
-                row += 1
+            # Durumu belirle: Şu an kapalı mı? (▶ ile mi başlıyor?)
+            is_collapsed = current_text.strip().startswith("▶")
+
+            # OKU GÜNCELLE
+            if is_collapsed:
+                # Kapalıymış, AÇACAĞIZ
+                new_text = current_text.replace("▶", "▼")
+                item.setText(new_text)
+                should_hide = False  # Gizleme, GÖSTER
+            else:
+                # Açıkmış, KAPATACAĞIZ
+                new_text = current_text.replace("▼", "▶")
+                item.setText(new_text)
+                should_hide = True  # GİZLE
+
+            # LİSTEDEKİ DİĞER ELEMANLARI BUL VE GİZLE/GÖSTER
+            # ListWidget'taki tüm satırları tek tek geziyoruz
+            for i in range(self.animal_list.count()):
+                loop_item = self.animal_list.item(i)
+
+                # Sadece bu grubun çocuklarını etkile
+                # (UserRole+1'i 'tur', UserRole+2'yi 'CHILD' olarak kaydetmiştik)
+                if (loop_item.data(Qt.UserRole + 1) == group_type and
+                    loop_item.data(Qt.UserRole + 2) == "CHILD"):
+                    loop_item.setHidden(should_hide)
             return
 
-        animal_id = data
+        # Eğer başlığa değil de hayvana tıklandıysa normal işlemleri yap
+        animal_id = role
         self.selected_animal_id = animal_id
         animal = self.db.get_animal_by_id(animal_id)
         if animal:
