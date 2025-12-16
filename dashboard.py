@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QH
                              QLabel, QLineEdit, QPushButton, QMessageBox, QListWidget, 
                              QListWidgetItem, QComboBox, QGroupBox, QGridLayout, QTextEdit,
                              QDialog, QDialogButtonBox, QFormLayout, QFileDialog, QDateEdit,
-                             QScrollArea)
+                             QScrollArea, QFrame)
 from PyQt5.QtCore import Qt, pyqtSignal, QRegExp, QDate
 from PyQt5.QtGui import QFont, QColor, QRegExpValidator, QPixmap
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -31,6 +31,8 @@ class Dashboard(QMainWindow):
         self.db.connect()
         self.selected_animal_id = None
         self.rfid_reader_thread = None  # RFID okuma thread'i için
+        # Hayvan listesindeki tür gruplarının (inek, koyun vs.) açık/kapalı durumları
+        self.group_states: Dict[str, bool] = {}
         
         self.setWindowTitle(f"{APP_CONFIG['title']} - Admin Dashboard")
         self.setMinimumSize(APP_CONFIG['width'], APP_CONFIG['height'])
@@ -46,8 +48,17 @@ class Dashboard(QMainWindow):
         self.load_animal_list()
     
     def init_ui(self):
-        # Ana widget
+        # Ana widget (login sayfası ile uyumlu arka plan)
         central_widget = QWidget()
+        central_widget.setStyleSheet("""
+            QWidget {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #E9FCE9,   /* açık yeşil */
+                    stop:1 #FDFBF7    /* krem */
+                );
+            }
+        """)
         self.setCentralWidget(central_widget)
         
         # Ana layout
@@ -56,39 +67,46 @@ class Dashboard(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         
-        # Header
+        # Header (login teması ile uyumlu)
         header = QWidget()
-        header.setFixedHeight(60)
-        header.setStyleSheet("background-color: #2c3e50;")
+        header.setFixedHeight(64)
+        header.setStyleSheet("""
+            background-color: #FFFFFF;
+            border-bottom: 1px solid #E4DDCF;
+        """)
         header_layout = QHBoxLayout()
         header.setLayout(header_layout)
         header_layout.setContentsMargins(20, 0, 20, 0)
         
-        title_label = QLabel(APP_CONFIG['title'])
-        title_label.setFont(QFont("Arial", 18, QFont.Bold))
-        title_label.setStyleSheet("color: white;")
+        # Sol üstte menü (hamburger) butonu için yer bırakalım (şimdilik sadece başlık)
+        title_label = QLabel("VisiFarm")
+        title_label.setFont(QFont("Arial", 20, QFont.Bold))
+        title_label.setStyleSheet("color: #3E2C1C;")
         header_layout.addWidget(title_label)
         
         header_layout.addStretch()
         
         user_label = QLabel(f"Hoş geldiniz, {self.username}")
-        user_label.setFont(QFont("Arial", 12))
-        user_label.setStyleSheet("color: white; margin-right: 15px;")
+        user_label.setFont(QFont("Arial", 11))
+        user_label.setStyleSheet("color: #887766; margin-right: 15px;")
         header_layout.addWidget(user_label)
 
         logout_btn = QPushButton("Çıkış Yap")
         logout_btn.setCursor(Qt.PointingHandCursor)
         logout_btn.setStyleSheet("""
             QPushButton {
-                background-color: #e74c3c;
-                color: white;
+                background-color: #FFE0E0;
+                color: #B03A2E;
                 border: none;
-                padding: 5px 15px;
-                border-radius: 3px;
+                padding: 6px 16px;
+                border-radius: 12px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #c0392b;
+                background-color: #FFC4C4;
+            }
+            QPushButton:pressed {
+                background-color: #FFAAAA;
             }
         """)
         logout_btn.clicked.connect(self.logout)
@@ -114,17 +132,24 @@ class Dashboard(QMainWindow):
     def create_left_panel(self):
         """Sol paneli oluştur"""
         panel = QWidget()
-        panel.setStyleSheet("background-color: white; border: 2px solid #ddd; border-radius: 5px;")
-        panel.setFixedWidth(350)
+        panel.setStyleSheet("""
+            QWidget {
+                background-color: #F6F9F5;
+                border-radius: 24px;
+                border: 1px solid #D4E4D4;
+            }
+        """)
+        panel.setFixedWidth(360)
         layout = QVBoxLayout()
         panel.setLayout(layout)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(15)
         
-        # Arama bölümü
-        search_label = QLabel("Ara:")
+        # Arama başlığı
+        search_label = QLabel("Hayvan ara")
         search_label.setFont(QFont("Arial", 11, QFont.Bold))
-        search_label.setStyleSheet("color: #2c3e50;")
+        search_label.setFrameShape(QFrame.NoFrame)
+        search_label.setStyleSheet("color: #3E2C1C; background: transparent; border: none;")
         layout.addWidget(search_label)
         
         # Arama kutusu ve RFID butonu için horizontal layout
@@ -136,15 +161,15 @@ class Dashboard(QMainWindow):
         self.search_entry.setPlaceholderText("İsim, tür, renk veya RFID ara...")
         self.search_entry.setStyleSheet("""
             QLineEdit {
-                padding: 8px;
-                border: 2px solid #ddd;
-                border-radius: 4px;
-                background-color: white;
-                color: black;
+                background-color: #FFFDF8;
+                color: #3E2C1C;
+                border: 1px solid #E4DDCF;
+                border-radius: 999px;
+                padding: 8px 14px;
             }
             QLineEdit:focus {
-                border: 2px solid #3498db;
-                color: black;
+                border: 1px solid #2E7D32;
+                background-color: #FFFFFF;
             }
         """)
         self.search_entry.textChanged.connect(self.on_search)
@@ -155,23 +180,23 @@ class Dashboard(QMainWindow):
         self.rfid_search_btn.setFont(QFont("Arial", 10))
         self.rfid_search_btn.setStyleSheet("""
             QPushButton {
-                background-color: #3498db;
-                color: white;
-                padding: 8px 15px;
+                background-color: #CDEBD3;
+                color: #215732;
+                padding: 8px 18px;
                 border: none;
-                border-radius: 4px;
-                font-weight: bold;
-                min-width: 100px;
+                border-radius: 999px;
+                font-weight: 600;
+                min-width: 110px;
             }
             QPushButton:hover {
-                background-color: #2980b9;
+                background-color: #B7DFC1;
             }
             QPushButton:pressed {
-                background-color: #21618c;
+                background-color: #A2D3AF;
             }
             QPushButton:disabled {
-                background-color: #95a5a6;
-                color: #ecf0f1;
+                background-color: #E0E0E0;
+                color: #A0A0A0;
             }
         """)
         self.rfid_search_btn.clicked.connect(self.start_rfid_search)
@@ -187,10 +212,11 @@ class Dashboard(QMainWindow):
         filter_group.setFont(QFont("Arial", 11, QFont.Bold))
         filter_group.setStyleSheet("""
             QGroupBox {
-                border: 2px solid #ecf0f1;
-                border-radius: 5px;
+                border: 1px solid #D4E4D4;
+                border-radius: 12px;
                 margin-top: 10px;
                 padding-top: 10px;
+                background-color: transparent;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -205,7 +231,8 @@ class Dashboard(QMainWindow):
         # Tür filtresi
         type_label = QLabel("Tür:")
         type_label.setFont(QFont("Arial", 10))
-        type_label.setStyleSheet("color: #34495e;")
+        type_label.setFrameShape(QFrame.NoFrame)
+        type_label.setStyleSheet("color: #34495e; background: transparent; border: none;")
         filter_layout.addWidget(type_label)
         
         self.filter_type = QComboBox()
@@ -213,13 +240,13 @@ class Dashboard(QMainWindow):
         self.filter_type.setStyleSheet("""
             QComboBox {
                 padding: 6px;
-                border: 2px solid #ddd;
-                border-radius: 4px;
+                border: 1px solid #E4DDCF;
+                border-radius: 8px;
                 background-color: white;
-                color: black;
+                color: #3E2C1C;
             }
             QComboBox:hover {
-                border: 2px solid #3498db;
+                border: 1px solid #2E7D32;
             }
             QComboBox::drop-down {
                 border: none;
@@ -231,7 +258,8 @@ class Dashboard(QMainWindow):
         # Cinsiyet filtresi
         gender_label = QLabel("Cinsiyet:")
         gender_label.setFont(QFont("Arial", 10))
-        gender_label.setStyleSheet("color: #34495e;")
+        gender_label.setFrameShape(QFrame.NoFrame)
+        gender_label.setStyleSheet("color: #34495e; background: transparent; border: none;")
         filter_layout.addWidget(gender_label)
         
         self.filter_gender = QComboBox()
@@ -239,13 +267,13 @@ class Dashboard(QMainWindow):
         self.filter_gender.setStyleSheet("""
             QComboBox {
                 padding: 6px;
-                border: 2px solid #ddd;
-                border-radius: 4px;
+                border: 1px solid #E4DDCF;
+                border-radius: 8px;
                 background-color: white;
-                color: black;
+                color: #3E2C1C;
             }
             QComboBox:hover {
-                border: 2px solid #3498db;
+                border: 1px solid #2E7D32;
             }
             QComboBox::drop-down {
                 border: none;
@@ -259,7 +287,8 @@ class Dashboard(QMainWindow):
         # Liste başlığı
         list_label = QLabel("Hayvan Listesi")
         list_label.setFont(QFont("Arial", 14, QFont.Bold))
-        list_label.setStyleSheet("color: #2c3e50; padding-top: 5px;")
+        list_label.setFrameShape(QFrame.NoFrame)
+        list_label.setStyleSheet("color: #3E2C1C; padding-top: 5px; background: transparent; border: none;")
         layout.addWidget(list_label)
         
         # Hayvan listesi
@@ -267,23 +296,23 @@ class Dashboard(QMainWindow):
         self.animal_list.setFont(QFont("Arial", 11))
         self.animal_list.setStyleSheet("""
             QListWidget {
-                border: 2px solid #ecf0f1;
-                border-radius: 4px;
-                background-color: #fafafa;
+                border: 1px solid #D4E4D4;
+                border-radius: 20px;
+                background-color: #FAFCFA;
                 color: black;
             }
             QListWidget::item {
-                padding: 8px;
-                border-bottom: 1px solid #ecf0f1;
+                padding: 8px 10px;
+                border-bottom: 1px solid #E8F0E8;
                 color: black;
             }
             QListWidget::item:selected {
                 background-color: transparent;
-                border: 2px solid #3498db;
+                border: 2px solid #2E7D32;
             }
             QListWidget::item:hover {
-                background-color: #e8f4f8;
-                color: black;
+                background-color: #F0F7F0;
+                color: #3E2C1C;
             }
         """)
         self.animal_list.itemClicked.connect(self.on_animal_select)
@@ -297,37 +326,37 @@ class Dashboard(QMainWindow):
         add_btn.setFont(QFont("Arial", 11, QFont.Bold))
         add_btn.setStyleSheet("""
             QPushButton {
-                background-color: #27ae60;
-                color: white;
+                background-color: #CDEBD3;
+                color: #215732;
                 padding: 12px;
                 border: none;
-                border-radius: 5px;
+                border-radius: 16px;
             }
             QPushButton:hover {
-                background-color: #229954;
+                background-color: #B7DFC1;
             }
             QPushButton:pressed {
-                background-color: #1e8449;
+                background-color: #A2D3AF;
             }
         """)
         add_btn.clicked.connect(self.add_animal)
         button_layout.addWidget(add_btn)
         
-        edit_btn = QPushButton("✏️ Düzenle")
+        edit_btn = QPushButton("Düzenle")
         edit_btn.setFont(QFont("Arial", 11))
         edit_btn.setStyleSheet("""
             QPushButton {
-                background-color: #3498db;
-                color: white;
+                background-color: #D7E8F8;
+                color: #1F4E79;
                 padding: 12px;
                 border: none;
-                border-radius: 5px;
+                border-radius: 16px;
             }
             QPushButton:hover {
-                background-color: #2980b9;
+                background-color: #C3DBF2;
             }
             QPushButton:pressed {
-                background-color: #21618c;
+                background-color: #AFCFEC;
             }
         """)
         # Buton metnini düzelt
@@ -339,17 +368,17 @@ class Dashboard(QMainWindow):
         delete_btn.setFont(QFont("Arial", 11))
         delete_btn.setStyleSheet("""
             QPushButton {
-                background-color: #e74c3c;
-                color: white;
+                background-color: #FFE0E0;
+                color: #B03A2E;
                 padding: 12px;
                 border: none;
-                border-radius: 5px;
+                border-radius: 16px;
             }
             QPushButton:hover {
-                background-color: #c0392b;
+                background-color: #FFC4C4;
             }
             QPushButton:pressed {
-                background-color: #a93226;
+                background-color: #FFAAAA;
             }
         """)
         delete_btn.clicked.connect(self.delete_animal)
@@ -371,6 +400,8 @@ class Dashboard(QMainWindow):
         # Başlık
         detail_label = QLabel("Hayvan Detayları")
         detail_label.setFont(QFont("Arial", 14, QFont.Bold))
+        detail_label.setFrameShape(QFrame.NoFrame)
+        detail_label.setStyleSheet("color: #3E2C1C; background: transparent; border: none;")
         layout.addWidget(detail_label)
         
         # Detay alanı (scrollable)
@@ -390,12 +421,36 @@ class Dashboard(QMainWindow):
         return panel
     
     def load_animal_list(self, animals=None):
-        """Hayvan listesini yükle"""
+        """Hayvan listesini yükle ve türlere göre grupla"""
         if animals is None:
             animals = self.db.get_all_animals()
-        
+
+        # Tür ve isimlere göre sırala ki gruplar düzgün gelsin
+        animals_sorted = sorted(
+            animals,
+            key=lambda a: ((a.tur or "").lower(), (a.isim or "").lower()),
+        )
+
         self.animal_list.clear()
-        for animal in animals:
+        current_type = None
+
+        for animal in animals_sorted:
+            animal_type = animal.tur or "Diğer"
+
+            # Yeni bir tür grubuna geçiyorsak başlık ekle
+            if animal_type != current_type:
+                current_type = animal_type
+                header_item = QListWidgetItem(f"  {current_type}")
+                header_font = header_item.font()
+                header_font.setBold(True)
+                header_item.setFont(header_font)
+                # Başlık seçilebilir ama tıklanınca sadece grubu aç/kapa yapar
+                header_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                header_item.setData(Qt.UserRole, f"header:{animal_type}")
+                header_item.setBackground(QColor("#F5F5F5"))
+                header_item.setForeground(QColor("#3E2C1C"))
+                self.animal_list.addItem(header_item)
+
             # Önce sağlık analizini yap
             try:
                 temp = getattr(animal, "temperature", None)
@@ -413,25 +468,27 @@ class Dashboard(QMainWindow):
                 prefix_icon = "🟡 "
 
             # Liste metnini oluştur
-            item_text = f"{prefix_icon}{animal.isim} - {animal.tur} ({animal.cinsiyet})"
+            item_text = f"{prefix_icon}{animal.isim} - {animal_type} ({animal.cinsiyet})"
             item = QListWidgetItem(item_text)
             item.setData(Qt.UserRole, animal.id)
 
             # Satır rengini de durumuna göre ayarla
             if status == "CRITICAL":
-                # Kırmızı tonlar
                 item.setBackground(QColor("#ffebee"))   # çok açık kırmızı
                 item.setForeground(QColor("#ea4335"))   # koyu kırmızı yazı
                 font = item.font()
                 font.setBold(True)
                 item.setFont(font)
             elif status == "WARNING":
-                # Sarı / turuncu tonlar
                 item.setBackground(QColor("#fff8e1"))   # açık sarı
                 item.setForeground(QColor("#ea4335"))   # turuncu yazı
                 font = item.font()
                 font.setBold(True)
                 item.setFont(font)
+
+            # Grup kapalıysa bu öğeyi gizle
+            if self.group_states.get(animal_type, False):
+                item.setHidden(True)
 
             self.animal_list.addItem(item)
     
@@ -508,7 +565,27 @@ class Dashboard(QMainWindow):
     
     def on_animal_select(self, item):
         """Hayvan seçildiğinde"""
-        animal_id = item.data(Qt.UserRole)
+        data = item.data(Qt.UserRole)
+
+        # Tür başlığına tıklandıysa o grubun açık/kapalı durumunu değiştir
+        if isinstance(data, str) and data.startswith("header:"):
+            animal_type = data.split("header:", 1)[1]
+            collapsed = self.group_states.get(animal_type, False)
+            new_state = not collapsed
+            self.group_states[animal_type] = new_state
+
+            row = self.animal_list.row(item) + 1
+            while row < self.animal_list.count():
+                child = self.animal_list.item(row)
+                child_data = child.data(Qt.UserRole)
+                # Sonraki başlığa gelince dur
+                if isinstance(child_data, str) and child_data.startswith("header:"):
+                    break
+                child.setHidden(new_state)
+                row += 1
+            return
+
+        animal_id = data
         self.selected_animal_id = animal_id
         animal = self.db.get_animal_by_id(animal_id)
         if animal:
@@ -541,67 +618,99 @@ class Dashboard(QMainWindow):
         current_weight = float(animal.kilo) if animal.kilo else None
         health_analysis = HealthAnalyzer.analyze_health(animal, current_temperature, current_weight)
         
-        # Hayvan adı - Daha görsel ve modern
+        # Hayvan adı - daha soft, login paletine uygun kart
         name_container = QWidget()
-        name_container.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3498db, stop:1 #2980b9); border-radius: 12px; padding: 20px; margin-bottom: 15px;")
-        name_layout = QHBoxLayout()
-        name_container.setLayout(name_layout)
-        name_layout.setContentsMargins(15, 10, 15, 10)
-        
+        name_container.setStyleSheet("""
+            QWidget {
+                background-color: #E3F3E8;
+                border-radius: 18px;
+                padding: 20px;
+                border: none;
+            }
+        """)
+
+        # Üst satır: isim + sağlık rozeti
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+
         name_label = QLabel(f"🐄 {animal.isim}")
-        name_label.setFont(QFont("Arial", 22, QFont.Bold))
-        name_label.setStyleSheet("color: white; background: transparent;")
-        name_layout.addWidget(name_label)
-        name_layout.addStretch()
-        
+        name_label.setFont(QFont("Arial", 26, QFont.Bold))
+        name_label.setFrameShape(QFrame.NoFrame)
+        name_label.setStyleSheet("color: #3E2C1C; background: transparent; border: none;")
+        header_layout.addWidget(name_label)
+        header_layout.addStretch()
+
         # Sağlık durumu badge'i (sağ üstte)
         health_badge = QLabel()
-        health_badge.setFont(QFont("Arial", 11, QFont.Bold))
+        health_badge.setFont(QFont("Arial", 13, QFont.Bold))
         health_badge.setAlignment(Qt.AlignCenter)
         # Boyutu Qt'ya bırak, sadece minimum genişlik ver
         health_badge.setMinimumWidth(110)
-        
+
         if health_analysis["health_status"] == "CRITICAL":
             health_badge.setText("KRİTİK")
+            # Çerçeveyi kaldır, sadece yumuşak arka plan kalsın
             health_badge.setStyleSheet("""
                 QLabel {
-                    background-color: #d32f2f;
-                    color: white;
+                    background-color: #FCE4E4;
+                    color: #C62828;
                     border-radius: 18px;
                     padding: 6px 20px;
+                    border: none;
                 }
             """)
         elif health_analysis["health_status"] == "WARNING":
             health_badge.setText("UYARI")
             health_badge.setStyleSheet("""
                 QLabel {
-                    background-color: #f57c00;
-                    color: white;
+                    background-color: #FFF2DD;
+                    color: #E65100;
                     border-radius: 18px;
                     padding: 6px 20px;
+                    border: none;
                 }
             """)
         else:
             health_badge.setText("İYİ")
             health_badge.setStyleSheet("""
                 QLabel {
-                    background-color: #27ae60;
-                    color: white;
+                    background-color: #E3F3E8;
+                    color: #2E7D32;
                     border-radius: 18px;
                     padding: 6px 20px;
+                    border: none;
                 }
             """)
-        name_layout.addWidget(health_badge)
+        header_layout.addWidget(health_badge)
+
+        # Alt satır: tür / cinsiyet / yaş özeti
+        summary_label = QLabel(
+            f"{animal.tur or 'Tür belirtilmemiş'} • "
+            f"{animal.cinsiyet or 'Cinsiyet belirtilmemiş'} • "
+            f"{animal.yas} yaşında"
+        )
+        summary_label.setFrameShape(QFrame.NoFrame)
+        summary_label.setStyleSheet(
+            "color: #5D4B3A; background: transparent; border: none; font-size: 15px;"
+        )
+
+        name_main_layout = QVBoxLayout()
+        name_main_layout.setContentsMargins(15, 10, 15, 5)
+        name_main_layout.setSpacing(6)
+        name_main_layout.addLayout(header_layout)
+        name_main_layout.addWidget(summary_label)
+
+        name_container.setLayout(name_main_layout)
         self.detail_layout.addWidget(name_container)
         
         # Spacing
         self.detail_layout.addSpacing(10)
         
-        # AI Uyarıları Göster (CRITICAL ve WARNING) - Sade kart tasarımı
+        # AI Uyarıları Göster (CRITICAL ve WARNING) - daha soft kart tasarımı
         if health_analysis["alerts"]:
             # Başlık - Daha belirgin
             alerts_title = QLabel("⚠️ Sağlık Uyarıları")
-            alerts_title.setFont(QFont("Arial", 14, QFont.Bold))
+            alerts_title.setFont(QFont("Arial", 18, QFont.Bold))
             alerts_title.setStyleSheet("color: #2c3e50; padding: 10px 0px 5px 0px;")
             self.detail_layout.addWidget(alerts_title)
             
@@ -609,16 +718,16 @@ class Dashboard(QMainWindow):
             for alert in health_analysis["alerts"]:
                 is_critical = alert["type"] == "CRITICAL"
 
-                bg_color = "#ffe5e5" if is_critical else "#fff5e6"
-                text_color = "#c62828" if is_critical else "#e65100"
-                border_color = "#f5b7b1" if is_critical else "#f8c471"
+                bg_color = "#FCE4E4" if is_critical else "#FFF2DD"
+                text_color = "#C62828" if is_critical else "#E65100"
+                border_color = "#F5B7B1" if is_critical else "#F8C471"
 
-                # Ana container
+                # Ana container (arka plan kalsın, çerçeve çizgisi olmasın)
                 alert_container = QWidget()
                 alert_container.setStyleSheet(f"""
                     QWidget {{
                         background-color: {bg_color};
-                        border: 1px solid {border_color};
+                        border: none;
                         border-radius: 8px;
                         padding: 0px;
                     }}
@@ -663,7 +772,7 @@ class Dashboard(QMainWindow):
                 
                 # Mesaj (sağ tarafta, tek satır kalın metin)
                 message_label = QLabel(alert["message"])
-                message_label.setFont(QFont("Arial", 11, QFont.Bold))
+                message_label.setFont(QFont("Arial", 15, QFont.Bold))
                 message_label.setStyleSheet(f"color: {text_color}; background: transparent;")
                 message_label.setWordWrap(True)
                 message_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -675,7 +784,7 @@ class Dashboard(QMainWindow):
         
         # Detay bilgileri - Modern kart tasarımı
         details_title = QLabel("📋 Hayvan Bilgileri")
-        details_title.setFont(QFont("Arial", 14, QFont.Bold))
+        details_title.setFont(QFont("Arial", 18, QFont.Bold))
         details_title.setStyleSheet("color: #2c3e50; padding: 15px 0px 10px 0px;")
         self.detail_layout.addWidget(details_title)
         
@@ -694,26 +803,21 @@ class Dashboard(QMainWindow):
         info_grid.setContentsMargins(15, 15, 15, 15)
         
         # Sağlık durumunu renklendir - Analiz sonucuna göre dinamik göster
-        health_status_color = "#2c3e50"
+        health_status_color = "#3E2C1C"
         if health_analysis["health_status"] == "CRITICAL":
             health_status_display = "🔴 KRİTİK"
-            health_status_color = "#d32f2f"
+            health_status_color = "#C62828"
         elif health_analysis["health_status"] == "WARNING":
             health_status_display = "🟡 UYARI"
-            health_status_color = "#f57c00"
+            health_status_color = "#E65100"
         else:
             health_status_display = "✅ İYİ"
-            health_status_color = "#27ae60"
+            health_status_color = "#2E7D32"
         
         info_items = [
             ("🏷️ RFID", animal.rfid_tag or "Belirtilmemiş"),
-            ("🐄 Tür", animal.tur),
-            ("🎂 Yaş", f"{animal.yas} yaşında"),
             ("⚖️ Kilo", f"{animal.kilo} kg"),
             ("📏 Boy", f"{animal.boy} cm"),
-            ("👤 Cinsiyet", animal.cinsiyet),
-            ("🎨 Renk", animal.renk),
-            ("📅 Doğum Tarihi", animal.dogum_tarihi or "Belirtilmemiş"),
             ("💊 Sağlık Durumu", health_status_display),
         ]
         
@@ -750,13 +854,13 @@ class Dashboard(QMainWindow):
             
             # Label
             label_widget = QLabel(label)
-            label_widget.setFont(QFont("Arial", 10))
+            label_widget.setFont(QFont("Arial", 12))
             label_widget.setStyleSheet("color: #7f8c8d; background: transparent;")
             item_layout.addWidget(label_widget)
             
             # Value
             value_widget = QLabel(value)
-            value_widget.setFont(QFont("Arial", 13, QFont.Bold))
+            value_widget.setFont(QFont("Arial", 16, QFont.Bold))
             # Sağlık durumu için özel renk
             if "Sağlık Durumu" in label:
                 value_widget.setStyleSheet(f"""
@@ -812,7 +916,7 @@ class Dashboard(QMainWindow):
             
             self.detail_layout.addWidget(notes_container)
         
-        # Fotoğraf ve sağlık butonları - Modern tasarım
+        # Fotoğraf ve sağlık butonları - daha yumuşak tasarım
         self.detail_layout.addSpacing(20)
         button_container = QWidget()
         button_layout = QHBoxLayout()
@@ -824,43 +928,43 @@ class Dashboard(QMainWindow):
         photos_btn.setCursor(Qt.PointingHandCursor)
         photos_btn.setStyleSheet("""
             QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #9b59b6, stop:1 #8e44ad);
-                color: white;
-                padding: 15px 25px;
-                border: none;
-                border-radius: 10px;
+                background-color: #FFFFFF;
+                color: #3E2C1C;
+                padding: 14px 22px;
+                border: 1px solid #E4DDCF;
+                border-radius: 16px;
                 font-weight: bold;
                 min-height: 45px;
             }
             QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #8e44ad, stop:1 #7d3c98);
+                background-color: #FDFBF7;
             }
             QPushButton:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #7d3c98, stop:1 #6c3483);
+                background-color: #F3EEE3;
             }
         """)
         photos_btn.clicked.connect(lambda: self.open_photo_dialog(animal))
         button_layout.addWidget(photos_btn)
 
-        # 7 günlük sağlık grafiği butonu
+        # 7 günlük sağlık grafiği butonu (popup)
         trend_btn = QPushButton("📈 7 Günlük Sağlık Grafiği")
         trend_btn.setFont(QFont("Arial", 12, QFont.Bold))
         trend_btn.setCursor(Qt.PointingHandCursor)
         trend_btn.setStyleSheet("""
             QPushButton {
-                background-color: #34495e;
-                color: white;
-                padding: 15px 25px;
+                background-color: #E4F0FB;
+                color: #1F4E79;
+                padding: 14px 22px;
                 border: none;
-                border-radius: 10px;
+                border-radius: 16px;
                 font-weight: bold;
                 min-height: 45px;
             }
             QPushButton:hover {
-                background-color: #2c3e50;
+                background-color: #D4E6F7;
             }
             QPushButton:pressed {
-                background-color: #22313f;
+                background-color: #C5DCF3;
             }
         """)
         trend_btn.clicked.connect(lambda: self.open_health_trend_dialog(animal))
@@ -872,19 +976,19 @@ class Dashboard(QMainWindow):
         log_btn.setCursor(Qt.PointingHandCursor)
         log_btn.setStyleSheet("""
             QPushButton {
-                background-color: #16a085;
-                color: white;
-                padding: 15px 25px;
+                background-color: #D7E8F8;
+                color: #1F4E79;
+                padding: 14px 22px;
                 border: none;
-                border-radius: 10px;
+                border-radius: 16px;
                 font-weight: bold;
                 min-height: 45px;
             }
             QPushButton:hover {
-                background-color: #13856c;
+                background-color: #C3DBF2;
             }
             QPushButton:pressed {
-                background-color: #0f6a55;
+                background-color: #AFCFEC;
             }
         """)
         log_btn.clicked.connect(lambda: self.open_health_log_dialog(animal))
@@ -934,13 +1038,47 @@ class Dashboard(QMainWindow):
         if dialog.exec_() == QDialog.Accepted and dialog.result:
             data = dialog.result
             try:
+                # Yeni ölçümü sağlık geçmişine kaydet
                 self.db.add_health_log(
                     animal.id,
                     data.get("weight"),
                     data.get("temperature"),
                     data.get("measured_at"),
                 )
-                QMessageBox.information(self, "Başarılı", "Yeni ölçüm başarıyla kaydedildi.")
+                # Hayvanın anlık kilo / ateş ve sağlık durumunu da güncelle
+                weight = data.get("weight")
+                temperature = data.get("temperature")
+
+                if weight is not None:
+                    animal.kilo = weight
+                if temperature is not None:
+                    animal.temperature = temperature
+
+                # Rule-based AI ile sağlık durumunu yeniden hesapla
+                updated_animal = HealthAnalyzer.update_animal_health_status(
+                    animal,
+                    temperature,
+                    weight if weight is not None else (float(animal.kilo) if animal.kilo else None),
+                )
+
+                # Veritabanındaki hayvan kaydını da güncelle
+                try:
+                    self.db.update_animal(animal.id, updated_animal)
+                except Exception:
+                    # DB güncellemesi başarısız olsa bile UI'ı güncellemeye devam et
+                    pass
+
+                # Liste ve detay panelini tazele (son ölçüm ve durumlar hemen görünsün)
+                self.on_search()
+                # Seçili hayvanı yeniden DB'den çekmeye çalış; olmazsa elimizdeki updated_animal'ı kullan
+                refreshed = None
+                try:
+                    refreshed = self.db.get_animal_by_id(animal.id)
+                except Exception:
+                    refreshed = None
+                self.show_animal_details(refreshed or updated_animal)
+
+                QMessageBox.information(self, "Başarılı", "Yeni ölçüm başarıyla kaydedildi ve detaylar güncellendi.")
             except Exception as e:
                 QMessageBox.critical(self, "Hata", f"Ölçüm kaydedilirken bir hata oluştu:\n{e}")
     
@@ -1294,18 +1432,18 @@ class PhotoDialog(QDialog):
             delete_btn = QPushButton("🗑️ Sil")
             delete_btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #e74c3c;
-                    color: white;
+                    background-color: #FFE0E0;
+                    color: #B03A2E;
                     padding: 6px;
                     border: none;
-                    border-radius: 4px;
+                    border-radius: 12px;
                     font-weight: bold;
                 }
                 QPushButton:hover {
-                    background-color: #c0392b;
+                    background-color: #FFC4C4;
                 }
                 QPushButton:pressed {
-                    background-color: #a93226;
+                    background-color: #FFAAAA;
                 }
             """)
             delete_btn.clicked.connect(lambda checked, info=photo_info: self.delete_photo(info))
@@ -1523,6 +1661,14 @@ class AnimalDialog(QDialog):
         self.setLayout(layout)
         layout.setContentsMargins(20, 20, 20, 20)
         
+        # Tüm label'larda çerçeve olmasın
+        self.setStyleSheet("""
+            QLabel {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        
         form_layout = QFormLayout()
         input_style = "padding: 6px; border: 1px solid #ccc; border-radius: 4px;"
 
@@ -1551,7 +1697,9 @@ class AnimalDialog(QDialog):
         self.tur_combo = QComboBox()
         self.tur_combo.addItems(ANIMAL_TYPES)
         self.tur_combo.setStyleSheet(input_style)
-        if data.get("tur"): self.tur_combo.setCurrentText(data.get("tur"))
+        self.tur_combo.setEnabled(True)  # Açıkça aktif et
+        if data.get("tur"): 
+            self.tur_combo.setCurrentText(data.get("tur"))
         form_layout.addRow("Tür *:", self.tur_combo)
         
         self.yas_entry = QLineEdit()
@@ -1575,19 +1723,10 @@ class AnimalDialog(QDialog):
         self.cinsiyet_combo = QComboBox()
         self.cinsiyet_combo.addItems(GENDERS)
         self.cinsiyet_combo.setStyleSheet(input_style)
-        if data.get("cinsiyet"): self.cinsiyet_combo.setCurrentText(data.get("cinsiyet"))
+        self.cinsiyet_combo.setEnabled(True)  # Açıkça aktif et
+        if data.get("cinsiyet"): 
+            self.cinsiyet_combo.setCurrentText(data.get("cinsiyet"))
         form_layout.addRow("Cinsiyet *:", self.cinsiyet_combo)
-
-        self.renk_entry = QLineEdit()
-        self.renk_entry.setText(data.get("renk", ""))
-        self.renk_entry.setStyleSheet(input_style)
-        form_layout.addRow("Renk:", self.renk_entry)
-
-        self.dogum_tarihi_entry = QLineEdit()
-        self.dogum_tarihi_entry.setText(data.get("dogum_tarihi", ""))
-        self.dogum_tarihi_entry.setStyleSheet(input_style)
-        self.dogum_tarihi_entry.setPlaceholderText("gg.aa.yyyy")
-        form_layout.addRow("Doğum Tarihi:", self.dogum_tarihi_entry)
 
         self.saglik_durumu_entry = QLineEdit()
         self.saglik_durumu_entry.setText(data.get("saglik_durumu", "İyi"))
@@ -1670,8 +1809,6 @@ class AnimalDialog(QDialog):
             "boy": self.boy_entry.text(),
             "cinsiyet": self.cinsiyet_combo.currentText(),
             "tur": self.tur_combo.currentText(),
-            "renk": self.renk_entry.text(),
-            "dogum_tarihi": self.dogum_tarihi_entry.text(),
             "saglik_durumu": self.saglik_durumu_entry.text(),
             "notlar": self.notlar_text.toPlainText(),
             "temperature": temperature,
