@@ -90,8 +90,8 @@ class LoginWindow(QMainWindow):
         self.card = card
 
         card_layout = QVBoxLayout()
-        card_layout.setContentsMargins(32, 32, 32, 28)
-        card_layout.setSpacing(20)
+        card_layout.setContentsMargins(40, 40, 40, 32)
+        card_layout.setSpacing(24)
         card.setLayout(card_layout)
         outer_layout.addWidget(card, 0, Qt.AlignCenter)
 
@@ -102,10 +102,7 @@ class LoginWindow(QMainWindow):
         self.logo_label.setStyleSheet("background-color: transparent; border: none;")
         self.logo_pixmap = QPixmap("assets/yaprak.png")
         if not self.logo_pixmap.isNull():
-            # İlk yüklemede orta boyutta başlat
-            initial_size = 64
-            scaled = self.logo_pixmap.scaledToWidth(initial_size, Qt.SmoothTransformation)
-            self.logo_label.setPixmap(scaled)
+            self.logo_label.setPixmap(self.logo_pixmap)
         card_layout.addWidget(self.logo_label, 0, Qt.AlignHCenter)
 
         # Başlık
@@ -313,12 +310,12 @@ class LoginWindow(QMainWindow):
 
             # Logo boyutunu da kart genişliğine göre ölçekle
             if hasattr(self, "logo_label") and hasattr(self, "logo_pixmap") and not self.logo_pixmap.isNull():
-                # Kart genişliğini hesaplanan target_width'tan al (daha güvenilir)
-                card_width = target_width
-                # Logo boyutu: kart genişliğinin %12-15'i arası, ama min 56px, max 80px
-                logo_ratio = 0.14 if card_width > 700 else 0.12
-                target_logo_width = max(56, min(80, int(card_width * logo_ratio)))
-                scaled = self.logo_pixmap.scaledToWidth(target_logo_width, Qt.SmoothTransformation)
+                card_width = self.card.width()
+                # Kart genişliğinin ~%18'i kadar bir max genişlik
+                max_logo_width = max(48, int(card_width * 0.18))
+                # Orijinal pixmap'i bu genişliğe kadar küçült, büyütürken bozmamak için min al
+                target_w = min(max_logo_width, self.logo_pixmap.width())
+                scaled = self.logo_pixmap.scaledToWidth(target_w, Qt.SmoothTransformation)
                 self.logo_label.setPixmap(scaled)
 
     def toggle_password_visibility(self):

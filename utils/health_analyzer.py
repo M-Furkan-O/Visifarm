@@ -9,10 +9,8 @@ from models.animal import Animal
 class HealthAnalyzer:
     """Hayvan sağlık durumunu analiz eden Rule-Based AI Engine"""
     
-    # Kritik ateş yüksekliği eşiği (°C)
+    # Kritik ateş eşiği (°C)
     CRITICAL_TEMPERATURE_THRESHOLD = 39.5
-    # Kritik düşük ateş eşiği (hipotermi) (°C)
-    LOW_TEMPERATURE_THRESHOLD = 36.0
     
     # Kilo kaybı uyarı eşiği (%)
     WEIGHT_LOSS_WARNING_THRESHOLD = 0.10  # %10
@@ -79,10 +77,7 @@ class HealthAnalyzer:
         """
         Ateş kontrolü yapar
         
-        Rules:
-            - Temperature < 36.0°C  -> CRITICAL (çok düşük / hipotermi)
-            - Temperature > 39.5°C  -> CRITICAL (çok yüksek ateş)
-            - Temperature > 38.5°C  -> WARNING (yüksek ama kritik değil)
+        Rule: Temperature > 39.5°C ise CRITICAL
         """
         if temperature is None:
             return {
@@ -91,14 +86,6 @@ class HealthAnalyzer:
                 "temperature": None
             }
         
-        # Çok düşük ateş (hipotermi)
-        if temperature < HealthAnalyzer.LOW_TEMPERATURE_THRESHOLD:
-            return {
-                "status": "CRITICAL",
-                "message": f"Çok düşük vücut sıcaklığı: {temperature}°C (Eşik: {HealthAnalyzer.LOW_TEMPERATURE_THRESHOLD}°C)",
-                "temperature": temperature
-            }
-        # Çok yüksek ateş
         if temperature > HealthAnalyzer.CRITICAL_TEMPERATURE_THRESHOLD:
             return {
                 "status": "CRITICAL",
@@ -123,10 +110,7 @@ class HealthAnalyzer:
         """
         Kilo kaybı analizi yapar
         
-        Rules:
-            - Mevcut kilo, profil kilosundan %10 DÜŞÜKSE  -> WARNING
-            - Mevcut kilo, profil kilosundan %10 YÜKSEKSE -> WARNING
-            - Aksi durumda GOOD
+        Rule: Mevcut kilo, profil kilosundan %10 düşükse WARNING
         """
         if current_weight is None:
             return {
@@ -152,48 +136,26 @@ class HealthAnalyzer:
                 "loss_percentage": None
             }
         
-        # Kilo değişim oranını hesapla
-        ratio = current_weight / baseline_weight
-        change_percentage = (abs(ratio - 1.0)) * 100
-        threshold_pct = HealthAnalyzer.WEIGHT_LOSS_WARNING_THRESHOLD * 100
-
-        # Profil kilosundan %10'dan fazla DÜŞÜŞ
-        if ratio <= (1.0 - HealthAnalyzer.WEIGHT_LOSS_WARNING_THRESHOLD):
+        # Kilo kaybı yüzdesini hesapla
+        weight_loss = baseline_weight - current_weight
+        loss_percentage = (weight_loss / baseline_weight) * 100
+        
+        if loss_percentage >= (HealthAnalyzer.WEIGHT_LOSS_WARNING_THRESHOLD * 100):
             return {
                 "status": "WARNING",
-                "message": (
-                    f"Kilo kaybı tespit edildi: {current_weight:.1f} kg "
-                    f"(Profil: {baseline_weight:.1f} kg, Kayıp: %{change_percentage:.1f})"
-                ),
+                "message": f"Kilo kaybı tespit edildi: {current_weight:.1f} kg (Profil: {baseline_weight:.1f} kg, Kayıp: %{loss_percentage:.1f})",
                 "current_weight": current_weight,
                 "baseline_weight": baseline_weight,
-                "change_percentage": change_percentage,
-                "direction": "LOSS",
+                "loss_percentage": loss_percentage
             }
-
-        # Profil kilosundan %10'dan fazla ARTIŞ
-        if ratio >= (1.0 + HealthAnalyzer.WEIGHT_LOSS_WARNING_THRESHOLD):
+        else:
             return {
-                "status": "WARNING",
-                "message": (
-                    f"Kilo artışı tespit edildi: {current_weight:.1f} kg "
-                    f"(Profil: {baseline_weight:.1f} kg, Artış: %{change_percentage:.1f})"
-                ),
+                "status": "GOOD",
+                "message": f"Kilo normal: {current_weight:.1f} kg (Profil: {baseline_weight:.1f} kg)",
                 "current_weight": current_weight,
                 "baseline_weight": baseline_weight,
-                "change_percentage": change_percentage,
-                "direction": "GAIN",
+                "loss_percentage": loss_percentage
             }
-
-        # Normal aralık
-        return {
-            "status": "GOOD",
-            "message": f"Kilo normal: {current_weight:.1f} kg (Profil: {baseline_weight:.1f} kg)",
-            "current_weight": current_weight,
-            "baseline_weight": baseline_weight,
-            "change_percentage": change_percentage,
-            "direction": "STABLE",
-        }
     
     @staticmethod
     def update_animal_health_status(animal: Animal, temperature: Optional[float] = None,

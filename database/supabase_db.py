@@ -54,17 +54,13 @@ class SupabaseDatabase(BaseDatabase):
             data = self._from_animal(animal)
             # ID Supabase tarafından identity ile üretiliyor, None ise gönderme
             data.pop("id", None)
-            # Kayıt ekle ve üretilen ID'yi geri al
-            # Not: Bazı eski supabase-py sürümlerinde insert(...).select(...) zinciri yok.
-            # Bu yüzden sadece insert(...).execute() kullanıp dönen datadan ID'yi çekiyoruz.
-            response = (
-                self.client.table(self.table_name)
-                .insert(data)
-                .execute()
-            )
+            # Kayıt ekle
+            # Not: Bazı supabase-py sürümlerinde insert() sonrası dönen nesnede
+            # .select() metodu bulunmadığı için doğrudan execute() çağırıyoruz.
+            response = self.client.table(self.table_name).insert(data).execute()
 
-            if response.data:
-                # Supabase, eklenen satırı listede döndürüyor olabilir
+            # Supabase genelde eklenen satır(lar)ı response.data içinde döner
+            if getattr(response, "data", None):
                 first_row = response.data[0]
                 generated_id = first_row.get("id")
                 if generated_id is not None:
@@ -128,8 +124,7 @@ class SupabaseDatabase(BaseDatabase):
         measured_at: Optional[datetime] = None,
     ) -> bool:
         """Belirli bir ölçüm anı için kilo + ateş kaydı ekle."""
-        # Geçersiz veya boş animal_id ile sorgu atmayalım
-        if not self.client or not animal_id or str(animal_id) in ("None", "null", ""):
+        if not self.client:
             return False
 
         if measured_at is None:
@@ -158,8 +153,7 @@ class SupabaseDatabase(BaseDatabase):
                 ...
             ]
         """
-        # Geçersiz veya boş animal_id ile sorgu atmayalım
-        if not self.client or not animal_id or str(animal_id) in ("None", "null", ""):
+        if not self.client:
             return []
 
         try:
